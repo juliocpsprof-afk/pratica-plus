@@ -1,575 +1,591 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getSession } from "@/lib/session/session.client";
+import { getTechnicalFeedback } from "@/lib/feedback/technicalFeedback";
 import {
-  getActiveScenariosByModuleSlug,
+  advanceStudentTrailIfNeeded,
+  getAvailableScenariosForStudent,
   getSimulationScenarioDetails,
   getStudentByProfileId,
   saveSimulationResult,
   SimulationAnswerInput,
-  SimulationOption,
   SimulationScenario,
   SimulationScenarioDetails,
   StudentByProfile,
 } from "@/services/simulation.service";
-import { TypingDots } from "@/components/student/TypingDots";
 
 type StudentSimulationRunnerProps = {
   moduleSlug: "telemarketing" | "vendas";
+  moduleTitle: string;
 };
 
 type ChatMessage = {
   id: string;
-  sender: "system" | "customer" | "student" | "feedback";
+  author: "cliente" | "aluno" | "sistema";
   text: string;
-  time: string;
   score?: number;
-  isBest?: boolean;
 };
 
-function getCurrentTime() {
-  return new Date().toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function difficultyLabel(value: string) {
+  if (value === "facil") return "Fácil";
+  if (value === "medio") return "Médio";
+  if (value === "dificil") return "Difícil";
+  return value;
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function difficultyTone(value: string) {
+  if (value === "facil") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (value === "medio") return "bg-amber-50 text-amber-700 ring-amber-100";
+  return "bg-red-50 text-red-700 ring-red-100";
+}
+
+function Badge({ children, className = "" }: { children: string; className?: string }) {
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${className}`}>
+      {children}
+    </span>
+  );
 }
 
 export function StudentSimulationRunner({
   moduleSlug,
+  moduleTitle,
 }: StudentSimulationRunnerProps) {
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-
   const [student, setStudent] = useState<StudentByProfile | null>(null);
   const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
   const [scenarioDetails, setScenarioDetails] =
     useState<SimulationScenarioDetails | null>(null);
+  const [difficultyFilter, setDifficultyFilter] = useState("todos");
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [answers, setAnswers] = useState<SimulationAnswerInput[]>([]);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [isCustomerTyping, setIsCustomerTyping] = useState(false);
-  const [isFeedbackTyping, setIsFeedbackTyping] = useState(false);
+  const [totalScore, setTotalScore] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
+  const [trailAdvanced, setTrailAdvanced] = useState(false);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  const moduleLabel =
-    moduleSlug === "telemarketing" ? "Telemarketing" : "Técnicas de Vendas";
 
   const currentStep = scenarioDetails?.steps[currentStepIndex] ?? null;
 
-  const totalScore = answers.reduce((sum, answer) => sum + answer.score, 0);
+  const averageScore = useMemo(() => {
+    if (answers.length === 0) return 0;
+    return Math.round(totalScore / answers.length);
+  }, [answers.length, totalScore]);
 
-  const visual = useMemo(() => {
-    if (moduleSlug === "telemarketing") {
-      return {
-        badge: "Atendimento",
-        customerAvatar: "C",
-        agentLabel: "Atendente",
-        status: "Cliente em atendimento",
-        headerGradient: "from-emerald-600 to-blue-700",
-      };
-    }
-
-    return {
-      badge: "Comercial",
-      customerAvatar: "V",
-      agentLabel: "Consultor",
-      status: "Cliente negociando",
-      headerGradient: "from-blue-700 to-[#08213f]",
-    };
-  }, [moduleSlug]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isCustomerTyping, isFeedbackTyping]);
-
-  async function loadInitialData() {
+  async function loadStudentAndScenarios(filter = difficultyFilter) {
     try {
-      setError("");
       setIsLoading(true);
+      setError("");
 
-      const session = getSession();
+      const session = getSession() as any;
+      const profileId = session?.profileId ?? session?.id;
 
-      if (!session) {
-        setError("Sessão não encontrada. Faça login novamente.");
+      if (!profileId) {
+        setError("Sessão do aluno não encontrada. Faça login novamente.");
         return;
       }
 
-      const [studentData, scenariosData] = await Promise.all([
-        getStudentByProfileId(session.profileId),
-        getActiveScenariosByModuleSlug(moduleSlug),
-      ]);
+      const studentData = await getStudentByProfileId(profileId);
+
+      if (!studentData) {
+        setError("Cadastro de aluno não encontrado para este usuário.");
+        return;
+      }
+
+      const scenariosData = await getAvailableScenariosForStudent(
+        moduleSlug,
+        studentData,
+        filter
+      );
 
       setStudent(studentData);
       setScenarios(scenariosData);
 
-      if (scenariosData[0]) {
+      if (!selectedScenarioId && scenariosData[0]) {
         setSelectedScenarioId(scenariosData[0].id);
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível carregar o simulador."
+          : "Não foi possível carregar as simulações."
       );
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function sendCustomerMessage(text: string) {
-    setIsCustomerTyping(true);
-    await wait(900 + Math.min(text.length * 12, 1400));
-    setIsCustomerTyping(false);
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        sender: "customer",
-        text,
-        time: getCurrentTime(),
-      },
-    ]);
-  }
-
-  async function startChat(details: SimulationScenarioDetails | null) {
-    setMessages([]);
-    setAnswers([]);
-    setCurrentStepIndex(0);
-    setIsFinished(false);
-    setSuccessMessage("");
-
-    if (!details || details.steps.length === 0) {
-      return;
-    }
-
-    const introMessage =
-      moduleSlug === "telemarketing"
-        ? "Nova chamada recebida. Atenda o cliente até finalizar a conversa."
-        : "Novo atendimento comercial iniciado. Conduza a venda até o fechamento.";
-
-    setMessages([
-      {
-        id: crypto.randomUUID(),
-        sender: "system",
-        text: introMessage,
-        time: getCurrentTime(),
-      },
-    ]);
-
-    await wait(700);
-    await sendCustomerMessage(details.steps[0].customer_message);
-  }
-
-  async function loadScenarioDetails(scenarioId: string) {
-    try {
-      setError("");
-      setSuccessMessage("");
-
-      if (!scenarioId) {
-        setScenarioDetails(null);
-        setMessages([]);
-        return;
-      }
-
-      const details = await getSimulationScenarioDetails(scenarioId);
-      setScenarioDetails(details);
-      await startChat(details);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível carregar o cenário."
-      );
-    }
-  }
-
   useEffect(() => {
-    loadInitialData();
+    loadStudentAndScenarios();
   }, []);
 
-  useEffect(() => {
-    if (selectedScenarioId) {
-      loadScenarioDetails(selectedScenarioId);
-    }
-  }, [selectedScenarioId]);
-
-  async function finishSimulation(finalAnswers: SimulationAnswerInput[]) {
-    if (!student || !scenarioDetails) {
-      return;
-    }
-
-    const finalScore = finalAnswers.reduce((sum, answer) => sum + answer.score, 0);
-
-    await saveSimulationResult({
-      scenarioId: scenarioDetails.id,
-      studentId: student.id,
-      classId: student.class_id,
-      mode: "individual",
-      moduleSlug,
-      answers: finalAnswers,
-      totalScore: finalScore,
-    });
-
-    setIsFinished(true);
-    setSuccessMessage("Simulação finalizada e salva no histórico.");
+  async function handleDifficultyChange(value: string) {
+    setDifficultyFilter(value);
+    setSelectedScenarioId("");
+    setScenarioDetails(null);
+    setMessages([]);
+    setAnswers([]);
+    setTotalScore(0);
+    setIsFinished(false);
+    await loadStudentAndScenarios(value);
   }
 
-  async function handleChooseOption(option: SimulationOption) {
+  async function startScenario() {
     try {
       setError("");
-      setSuccessMessage("");
+      setIsStarting(true);
+      setIsFinished(false);
+      setTrailAdvanced(false);
+      setAnswers([]);
+      setTotalScore(0);
+      setCurrentStepIndex(0);
 
-      if (!currentStep) {
-        setError("Etapa atual não encontrada.");
+      if (!selectedScenarioId) {
+        setError("Escolha um cenário para iniciar.");
         return;
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          sender: "student",
-          text: option.option_text,
-          time: getCurrentTime(),
-        },
-      ]);
+      const details = await getSimulationScenarioDetails(selectedScenarioId);
 
-      const nextAnswers = [
-        ...answers,
-        {
-          stepId: currentStep.id,
-          optionId: option.id,
-          score: option.score,
-        },
-      ];
-
-      setAnswers(nextAnswers);
-      setIsSaving(true);
-
-      await wait(500);
-      setIsFeedbackTyping(true);
-      await wait(850);
-      setIsFeedbackTyping(false);
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          sender: "feedback",
-          text:
-            option.feedback ??
-            "Resposta registrada. Continue conduzindo a conversa.",
-          time: getCurrentTime(),
-          score: option.score,
-          isBest: option.is_best_option,
-        },
-      ]);
-
-      const nextStepIndex = currentStepIndex + 1;
-      const nextStep = scenarioDetails?.steps[nextStepIndex];
-
-      if (nextStep) {
-        await wait(900);
-        setCurrentStepIndex(nextStepIndex);
-        await sendCustomerMessage(nextStep.customer_message);
-      } else {
-        await wait(700);
-        await finishSimulation(nextAnswers);
+      if (details.steps.length === 0) {
+        setError("Este cenário ainda não possui etapas cadastradas.");
+        return;
       }
+
+      setScenarioDetails(details);
+
+      setMessages([
+        {
+          id: `cliente-${details.steps[0].id}`,
+          author: "cliente",
+          text: details.steps[0].customer_message,
+        },
+      ]);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível salvar a resposta."
+          : "Não foi possível iniciar a simulação."
+      );
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  async function handleSelectOption(optionId: string) {
+    if (!scenarioDetails || !currentStep || !student || isSaving) {
+      return;
+    }
+
+    const selectedOption = currentStep.options.find((option) => option.id === optionId);
+
+    if (!selectedOption) {
+      return;
+    }
+
+    const technicalFeedback = getTechnicalFeedback({
+      moduleSlug,
+      score: selectedOption.score,
+      technicalFocus: scenarioDetails.technical_focus,
+      learningObjective: scenarioDetails.learning_objective,
+      sourceLesson: scenarioDetails.source_lesson,
+    });
+
+    const finalFeedback = selectedOption.feedback
+      ? `${selectedOption.feedback}\n\n${technicalFeedback}`
+      : technicalFeedback;
+
+    const nextAnswer: SimulationAnswerInput = {
+      stepId: currentStep.id,
+      optionId: selectedOption.id,
+      score: selectedOption.score,
+      feedback: finalFeedback,
+    };
+
+    const nextAnswers = [...answers, nextAnswer];
+    const nextTotalScore = totalScore + selectedOption.score;
+
+    setAnswers(nextAnswers);
+    setTotalScore(nextTotalScore);
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: `aluno-${selectedOption.id}`,
+        author: "aluno",
+        text: selectedOption.option_text,
+      },
+      {
+        id: `sistema-${selectedOption.id}`,
+        author: "sistema",
+        text: finalFeedback,
+        score: selectedOption.score,
+      },
+    ]);
+
+    const nextStepIndex = currentStepIndex + 1;
+
+    if (nextStepIndex < scenarioDetails.steps.length) {
+      const nextStep = scenarioDetails.steps[nextStepIndex];
+
+      setCurrentStepIndex(nextStepIndex);
+
+      setTimeout(() => {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: `cliente-${nextStep.id}`,
+            author: "cliente",
+            text: nextStep.customer_message,
+          },
+        ]);
+      }, 450);
+
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const finalAverage = Math.round(nextTotalScore / nextAnswers.length);
+
+      await saveSimulationResult({
+        scenarioId: scenarioDetails.id,
+        studentId: student.id,
+        classId: student.class_id,
+        moduleSlug,
+        mode: "individual",
+        totalScore: finalAverage,
+        answers: nextAnswers,
+      });
+
+      const advanced = await advanceStudentTrailIfNeeded(student, finalAverage);
+
+      setTrailAdvanced(advanced);
+      setIsFinished(true);
+
+      await loadStudentAndScenarios(difficultyFilter);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar o resultado."
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  function restartScenario() {
-    if (scenarioDetails) {
-      startChat(scenarioDetails);
-    }
+  function restart() {
+    setScenarioDetails(null);
+    setMessages([]);
+    setAnswers([]);
+    setTotalScore(0);
+    setCurrentStepIndex(0);
+    setIsFinished(false);
+    setTrailAdvanced(false);
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[340px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Simulador
-        </p>
-
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Atendimento em chat real.
-        </h2>
-
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          A conversa avança em etapas, com cliente digitando e respostas rápidas do aluno.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Módulo
-            </label>
-            <div className="rounded-2xl bg-[#f4f8fc] px-5 py-4 text-sm font-black text-[#08213f]">
-              {moduleLabel}
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Simulador individual
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                {moduleTitle}
+              </h2>
             </div>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Cenário
-            </label>
-            <select
-              value={selectedScenarioId}
-              onChange={(event) => setSelectedScenarioId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {scenarios.map((scenario) => (
-                <option key={scenario.id} value={scenario.id}>
-                  {scenario.title}
-                </option>
-              ))}
-            </select>
-          </div>
+            {student && (
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-blue-50 text-blue-700 ring-blue-100">
+                  {student.simulation_access_mode === "trilha" ? "Modo Trilha" : "Modo Livre"}
+                </Badge>
 
-          {scenarioDetails && (
-            <div className="rounded-[1.5rem] bg-[#f4f8fc] p-5">
-              <p className="text-xs font-black uppercase text-slate-400">
-                Cliente
-              </p>
-              <h3 className="mt-2 text-xl font-black text-[#08213f]">
-                {scenarioDetails.customer_name ?? "Cliente"}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {scenarioDetails.customer_profile ?? "Sem perfil informado."}
-              </p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <span className="rounded-2xl bg-white px-3 py-3 text-xs font-black text-blue-700">
-                  Etapa {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)} de {scenarioDetails.steps.length}
-                </span>
-                <span className="rounded-2xl bg-white px-3 py-3 text-xs font-black text-emerald-700">
-                  Pontos: {totalScore}
-                </span>
+                {student.simulation_access_mode === "trilha" && (
+                  <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-100">
+                    Nível liberado {student.trail_unlocked_level}
+                  </Badge>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {isLoading && (
-            <div className="rounded-2xl bg-blue-50 p-4 text-sm font-bold text-blue-700">
-              Carregando simulador...
-            </div>
-          )}
-
+        <div className="p-5 md:p-6">
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+            <div className="mb-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-              {successMessage}
+          {isLoading ? (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              Carregando simulações...
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_220px]">
+              {student?.simulation_access_mode === "livre" ? (
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                    Dificuldade
+                  </span>
+                  <select
+                    value={difficultyFilter}
+                    onChange={(event) => handleDifficultyChange(event.target.value)}
+                    className="app-input"
+                    disabled={Boolean(scenarioDetails)}
+                  >
+                    <option value="todos">Todas liberadas</option>
+                    {(student.free_allowed_difficulties ?? []).map((difficulty) => (
+                      <option key={difficulty} value={difficulty}>
+                        {difficultyLabel(difficulty)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <p className="text-xs font-black uppercase tracking-[0.1em] text-emerald-700">
+                    Trilha
+                  </p>
+                  <p className="mt-1 text-sm font-black text-emerald-900">
+                    Nível {student?.trail_unlocked_level ?? 1} liberado
+                  </p>
+                </div>
+              )}
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                  Cenário
+                </span>
+                <select
+                  value={selectedScenarioId}
+                  onChange={(event) => setSelectedScenarioId(event.target.value)}
+                  className="app-input"
+                  disabled={Boolean(scenarioDetails)}
+                >
+                  {scenarios.length === 0 ? (
+                    <option value="">Nenhum cenário disponível</option>
+                  ) : (
+                    scenarios.map((scenario) => (
+                      <option key={scenario.id} value={scenario.id}>
+                        {scenario.title}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <div className="flex items-end gap-3">
+                {!scenarioDetails ? (
+                  <button
+                    type="button"
+                    onClick={startScenario}
+                    disabled={isStarting || scenarios.length === 0}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-[#08213f] px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isStarting ? "Iniciando..." : "Iniciar prática"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={restart}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                  >
+                    Escolher outro
+                  </button>
+                )}
+              </div>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={restartScenario}
-            disabled={!scenarioDetails}
-            className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Reiniciar conversa
-          </button>
         </div>
-      </aside>
+      </section>
 
-      <main className="overflow-hidden rounded-[1.75rem] bg-white shadow-sm ring-1 ring-slate-200">
-        <header className={`bg-gradient-to-r ${visual.headerGradient} px-5 py-4 text-white`}>
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-lg font-black ring-2 ring-white/30">
-              {visual.customerAvatar}
-            </div>
+      {scenarioDetails && (
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <main className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-black text-[#08213f]">
+                    {scenarioDetails.title}
+                  </h3>
 
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-lg font-black">
-                {scenarioDetails?.customer_name ?? "Cliente"}
-              </h1>
-              <div className="mt-1 flex items-center gap-2 text-xs font-bold text-white/80">
-                <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                {isCustomerTyping ? "digitando..." : visual.status}
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {scenarioDetails.description || "Prática profissional orientada."}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={difficultyTone(scenarioDetails.difficulty)}>
+                    {difficultyLabel(scenarioDetails.difficulty)}
+                  </Badge>
+
+                  <Badge className="bg-slate-100 text-slate-700 ring-slate-200">
+                    Etapa {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)} de {scenarioDetails.steps.length}
+                  </Badge>
+                </div>
               </div>
             </div>
 
-            <div className="hidden rounded-full bg-white/15 px-4 py-2 text-xs font-black md:block">
-              {visual.badge}
-            </div>
-          </div>
-        </header>
-
-        <section className="min-h-[620px] bg-[radial-gradient(circle_at_top_left,#e0f2fe,transparent_28%),linear-gradient(180deg,#f8fafc,#eef4f8)]">
-          <div className="mx-auto flex min-h-[620px] max-w-4xl flex-col">
-            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6">
-              {messages.map((message) => {
-                if (message.sender === "system") {
-                  return (
-                    <div key={message.id} className="flex justify-center">
-                      <div className="max-w-md rounded-full bg-white/80 px-4 py-2 text-center text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200">
-                        {message.text}
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (message.sender === "student") {
-                  return (
-                    <div key={message.id} className="flex justify-end">
-                      <div className="max-w-[78%] rounded-3xl rounded-br-md bg-[#dcf8c6] px-5 py-4 shadow-sm">
-                        <p className="text-sm font-bold leading-6 text-[#123524]">
-                          {message.text}
-                        </p>
-                        <p className="mt-2 text-right text-[11px] font-bold text-emerald-800/60">
-                          {message.time} ✓✓
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (message.sender === "feedback") {
-                  return (
-                    <div key={message.id} className="flex justify-center">
-                      <div
-                        className={`max-w-xl rounded-[1.5rem] p-5 shadow-sm ring-1 ${
-                          message.isBest
-                            ? "bg-emerald-50 ring-emerald-200"
-                            : "bg-amber-50 ring-amber-200"
-                        }`}
-                      >
-                        <p
-                          className={`text-xs font-black uppercase tracking-[0.18em] ${
-                            message.isBest ? "text-emerald-700" : "text-amber-700"
-                          }`}
-                        >
-                          Feedback do sistema
-                        </p>
-
-                        <h3 className="mt-2 text-2xl font-black text-[#08213f]">
-                          Pontuação: {message.score}
-                        </h3>
-
-                        <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">
-                          {message.text}
-                        </p>
-
-                        <p className="mt-3 text-right text-[11px] font-bold text-slate-400">
-                          {message.time}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={message.id} className="flex justify-start">
-                    <div className="max-w-[78%] rounded-3xl rounded-bl-md bg-white px-5 py-4 shadow-sm ring-1 ring-slate-100">
-                      <p className="mb-1 text-xs font-black text-blue-700">
-                        {scenarioDetails?.customer_name ?? "Cliente"}
-                      </p>
-                      <p className="text-sm font-semibold leading-6 text-slate-700">
-                        {message.text}
-                      </p>
-                      <p className="mt-2 text-right text-[11px] font-bold text-slate-400">
-                        {message.time}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {isCustomerTyping && (
-                <div className="flex justify-start">
-                  <div className="rounded-3xl rounded-bl-md bg-white px-5 py-4 shadow-sm ring-1 ring-slate-100">
-                    <TypingDots />
-                  </div>
-                </div>
-              )}
-
-              {isFeedbackTyping && (
-                <div className="flex justify-center">
-                  <div className="rounded-full bg-white px-5 py-3 shadow-sm ring-1 ring-slate-200">
-                    <TypingDots />
-                  </div>
-                </div>
-              )}
-
-              <div ref={bottomRef} />
-            </div>
-
-            <div className="border-t border-slate-200 bg-white/90 p-5 backdrop-blur">
-              {!currentStep ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
-                  {isFinished
-                    ? "Conversa finalizada. Você pode reiniciar ou escolher outro cenário."
-                    : "Nenhuma etapa disponível neste cenário."}
-                </div>
-              ) : isFinished ? (
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <p className="text-sm font-bold text-slate-600">
-                    Atendimento finalizado. Pontuação total: {totalScore}
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={restartScenario}
-                    className="rounded-full bg-[#08213f] px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800"
+            <div className="h-[520px] overflow-y-auto bg-slate-50 p-5 md:p-6">
+              <div className="space-y-4">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${
+                      message.author === "aluno" ? "justify-end" : "justify-start"
+                    }`}
                   >
-                    Nova tentativa
-                  </button>
+                    <div
+                      className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-sm ${
+                        message.author === "cliente"
+                          ? "bg-white text-slate-800 ring-1 ring-slate-200"
+                          : message.author === "aluno"
+                            ? "bg-[#08213f] text-white"
+                            : "bg-blue-50 text-blue-950 ring-1 ring-blue-100"
+                      }`}
+                    >
+                      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.1em] opacity-70">
+                        {message.author === "cliente"
+                          ? scenarioDetails.customer_name || "Cliente"
+                          : message.author === "aluno"
+                            ? "Sua resposta"
+                            : "Feedback técnico"}
+                      </p>
+
+                      <p className="whitespace-pre-line text-sm leading-6">
+                        {message.text}
+                      </p>
+
+                      {typeof message.score === "number" && (
+                        <p className="mt-2 text-xs font-black">
+                          Pontuação da resposta: {message.score}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {!isFinished && currentStep && (
+              <div className="border-t border-slate-200 bg-white p-5 md:p-6">
+                <p className="mb-4 text-sm font-black text-[#08213f]">
+                  Escolha sua resposta:
+                </p>
+
+                <div className="grid gap-3">
+                  {currentStep.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleSelectOption(option.id)}
+                      disabled={isSaving}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 text-left text-sm font-semibold leading-6 text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {option.option_text}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <>
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                    Respostas rápidas do {visual.agentLabel}
+              </div>
+            )}
+
+            {isFinished && (
+              <div className="border-t border-slate-200 bg-white p-5 md:p-6">
+                <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-100">
+                  <p className="text-lg font-black text-emerald-900">
+                    Simulação finalizada
                   </p>
 
-                  <div className="grid gap-3">
-                    {currentStep.options.map((option, index) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => handleChooseOption(option)}
-                        disabled={isSaving || isCustomerTyping || isFeedbackTyping}
-                        className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#08213f] text-xs font-black text-white">
-                          {index + 1}
-                        </span>
+                  <p className="mt-2 text-sm leading-6 text-emerald-800">
+                    Sua média foi <strong>{averageScore}</strong> pontos.
+                  </p>
 
-                        <span className="text-sm font-bold leading-6 text-slate-700 group-hover:text-[#08213f]">
-                          {option.option_text}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+                  {trailAdvanced && (
+                    <p className="mt-2 text-sm font-bold text-emerald-800">
+                      Parabéns. Você liberou o próximo nível da trilha.
+                    </p>
+                  )}
+
+                  {!trailAdvanced && student?.simulation_access_mode === "trilha" && (
+                    <p className="mt-2 text-sm font-bold text-emerald-800">
+                      Continue praticando para avançar na trilha.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </main>
+
+          <aside className="space-y-4">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Resumo técnico
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+                    Cliente
+                  </p>
+                  <p className="mt-1 text-sm font-black text-[#08213f]">
+                    {scenarioDetails.customer_name || "Não informado"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+                    Perfil
+                  </p>
+                  <p className="mt-1 text-sm font-black leading-5 text-[#08213f]">
+                    {scenarioDetails.customer_profile || "Não informado"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+                    Foco técnico
+                  </p>
+                  <p className="mt-1 text-sm font-black leading-5 text-[#08213f]">
+                    {scenarioDetails.technical_focus || "Atendimento profissional"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+                    Média atual
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-[#08213f]">
+                    {averageScore}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {student?.pedagogical_notes && (
+              <section className="rounded-3xl border border-amber-100 bg-amber-50 p-5 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+                  Orientação do professor
+                </p>
+
+                <p className="mt-3 text-sm font-semibold leading-6 text-amber-950">
+                  {student.pedagogical_notes}
+                </p>
+              </section>
+            )}
+          </aside>
         </section>
-      </main>
+      )}
     </section>
   );
 }

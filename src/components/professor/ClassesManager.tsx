@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ClassRow,
   createClass,
@@ -10,17 +10,107 @@ import {
 } from "@/services/classes.service";
 import { CourseRow, getCourses } from "@/services/courses.service";
 
-const shiftOptions = ["Manhã", "Tarde", "Noite", "Sábado"];
+const shiftOptions = ["Manhã", "Tarde", "Noite", "Integral", "Sábado"];
+
+function Badge({
+  children,
+  tone = "slate",
+}: {
+  children: string;
+  tone?: "slate" | "green" | "blue";
+}) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black ring-1 ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ActionButton({
+  children,
+  tone = "secondary",
+  onClick,
+}: {
+  children: string;
+  tone?: "primary" | "secondary" | "danger";
+  onClick: () => void;
+}) {
+  const tones = {
+    primary:
+      "bg-[#08213f] text-white hover:bg-blue-800 focus:ring-blue-100",
+    secondary:
+      "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-200",
+    danger:
+      "bg-red-600 text-white hover:bg-red-700 focus:ring-red-100",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-black shadow-sm transition focus:outline-none focus:ring-4 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-black text-[#08213f]">
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export function ClassesManager() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [name, setName] = useState("");
-  const [courseId, setCourseId] = useState<string>("");
-  const [shift, setShift] = useState(shiftOptions[0]);
+  const [courseId, setCourseId] = useState("");
+  const [shift, setShift] = useState("Manhã");
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  const activeCount = classes.filter((item) => item.is_active).length;
+
+  const filteredClasses = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) {
+      return classes;
+    }
+
+    return classes.filter((item) => {
+      const text = `${item.name} ${item.shift ?? ""} ${
+        item.courses?.name ?? ""
+      }`.toLowerCase();
+
+      return text.includes(term);
+    });
+  }, [classes, search]);
 
   async function loadData() {
     try {
@@ -42,7 +132,7 @@ export function ClassesManager() {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível carregar os dados."
+          : "Não foi possível carregar as turmas."
       );
     } finally {
       setIsLoading(false);
@@ -56,6 +146,7 @@ export function ClassesManager() {
   async function handleCreateClass() {
     try {
       setError("");
+      setMessage("");
 
       if (!name.trim()) {
         setError("Informe o nome da turma.");
@@ -63,20 +154,23 @@ export function ClassesManager() {
       }
 
       if (!courseId) {
-        setError("Cadastre ou selecione um curso antes de criar a turma.");
+        setError("Selecione um curso para a turma.");
         return;
       }
 
       setIsSaving(true);
 
-      const newClass = await createClass({
-        name: name.trim(),
+      await createClass({
+        name,
         courseId,
         shift,
       });
 
-      setClasses((currentClasses) => [newClass, ...currentClasses]);
       setName("");
+      setShift("Manhã");
+      setMessage("Turma cadastrada com sucesso.");
+
+      await loadData();
     } catch (err) {
       setError(
         err instanceof Error
@@ -90,209 +184,242 @@ export function ClassesManager() {
 
   async function handleToggleStatus(classItem: ClassRow) {
     try {
-      const nextStatus = classItem.status === "ativa" ? "encerrada" : "ativa";
+      setError("");
+      setMessage("");
 
-      await updateClassStatus(classItem.id, nextStatus);
+      await updateClassStatus(classItem.id, !classItem.is_active);
 
-      setClasses((currentClasses) =>
-        currentClasses.map((item) =>
-          item.id === classItem.id ? { ...item, status: nextStatus } : item
-        )
-      );
+      await loadData();
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível alterar o status."
+          : "Não foi possível alterar o status da turma."
       );
     }
   }
 
   async function handleDeleteClass(classId: string) {
     try {
+      setError("");
+      setMessage("");
+
       await deleteClass(classId);
 
-      setClasses((currentClasses) =>
-        currentClasses.filter((classItem) => classItem.id !== classId)
-      );
+      setMessage("Turma removida.");
+      await loadData();
     } catch (err) {
       setError(
         err instanceof Error
-          ? err.message
+          ? `${err.message} Se esta turma já possui alunos vinculados, ela não poderá ser removida.`
           : "Não foi possível remover a turma."
       );
     }
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[420px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Nova turma
-        </p>
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Configuração
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Nova turma
+              </h2>
+            </div>
 
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Crie turmas para organizar os alunos.
-        </h2>
-
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Agora as turmas são salvas diretamente no Supabase.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Nome da turma
-            </label>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              type="text"
-              placeholder="Ex: Telemarketing Manhã"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+              Total: {classes.length} • Ativas: {activeCount}
+            </div>
           </div>
+        </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Curso
+        <div className="p-5 md:p-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                Nome da turma
+              </span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                type="text"
+                placeholder="Ex: Turma 01"
+                className="app-input"
+              />
             </label>
-            <select
-              value={courseId}
-              onChange={(event) => setCourseId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {course.name}
-                </option>
-              ))}
-            </select>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Turno
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                Curso
+              </span>
+              <select
+                value={courseId}
+                onChange={(event) => setCourseId(event.target.value)}
+                className="app-input"
+              >
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.name}
+                  </option>
+                ))}
+              </select>
             </label>
-            <select
-              value={shift}
-              onChange={(event) => setShift(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {shiftOptions.map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                Turno
+              </span>
+              <select
+                value={shift}
+                onChange={(event) => setShift(event.target.value)}
+                className="app-input"
+              >
+                {shiftOptions.map((shiftOption) => (
+                  <option key={shiftOption} value={shiftOption}>
+                    {shiftOption}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+            <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleCreateClass}
-            disabled={isSaving}
-            className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Salvando..." : "Cadastrar turma"}
-          </button>
-        </div>
-      </aside>
+          {message && (
+            <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {message}
+            </div>
+          )}
 
-      <main className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-              Turmas cadastradas
-            </p>
-            <h2 className="mt-2 text-3xl font-black text-[#08213f]">
-              Lista de turmas
-            </h2>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setName("");
+                setShift("Manhã");
+              }}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+            >
+              Limpar
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateClass}
+              disabled={isSaving}
+              className="inline-flex items-center justify-center rounded-xl bg-[#08213f] px-6 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "Salvando..." : "Cadastrar turma"}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={loadData}
-            className="rounded-full bg-blue-50 px-5 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100"
-          >
-            Atualizar
-          </button>
         </div>
+      </section>
 
-        {isLoading ? (
-          <div className="mt-8 rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center text-sm font-black text-slate-500">
-            Carregando turmas...
-          </div>
-        ) : classes.length === 0 ? (
-          <div className="mt-8 grid place-items-center rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-4xl shadow-sm">
-              🏫
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Turmas cadastradas
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Lista de turmas
+              </h2>
             </div>
 
-            <h3 className="mt-5 text-2xl font-black text-[#08213f]">
-              Nenhuma turma criada.
-            </h3>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar turma..."
+                className="app-input min-w-[240px] px-4 py-2.5 text-sm"
+              />
 
-            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-              Crie a primeira turma para organizar os alunos.
-            </p>
+              <ActionButton onClick={loadData}>Atualizar</ActionButton>
+            </div>
           </div>
-        ) : (
-          <div className="mt-6 grid gap-4">
-            {classes.map((classItem) => (
-              <article
-                key={classItem.id}
-                className="rounded-[1.5rem] border border-slate-200 bg-white p-5"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-xl font-black text-[#08213f]">
-                        {classItem.name}
-                      </h3>
+        </div>
 
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-black ${
-                          classItem.status === "ativa"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {classItem.status}
-                      </span>
+        <div className="p-5 md:p-6">
+          {isLoading ? (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              Carregando turmas...
+            </div>
+          ) : filteredClasses.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <h3 className="text-lg font-black text-[#08213f]">
+                Nenhuma turma encontrada.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Cadastre uma turma ou ajuste a busca.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredClasses.map((classItem) => (
+                <article
+                  key={classItem.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                >
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <h3 className="truncate text-base font-black text-[#08213f]">
+                          {classItem.name}
+                        </h3>
+
+                        <Badge tone={classItem.is_active ? "green" : "slate"}>
+                          {classItem.is_active ? "Ativa" : "Inativa"}
+                        </Badge>
+                      </div>
+
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        Turma vinculada ao curso{" "}
+                        <strong>{classItem.courses?.name ?? "não informado"}</strong>.
+                      </p>
                     </div>
 
-                    <p className="mt-2 text-sm font-semibold text-slate-500">
-                      {classItem.courses?.name ?? "Sem curso"} • {classItem.shift}
-                    </p>
-                  </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <SummaryItem
+                        label="Curso"
+                        value={classItem.courses?.name ?? "Sem curso"}
+                      />
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(classItem)}
-                      className="rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 transition hover:bg-blue-100"
-                    >
-                      Alterar status
-                    </button>
+                      <SummaryItem
+                        label="Turno"
+                        value={classItem.shift ?? "Não informado"}
+                      />
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteClass(classItem.id)}
-                      className="rounded-full bg-red-50 px-4 py-2 text-xs font-black text-red-700 transition hover:bg-red-100"
-                    >
-                      Remover
-                    </button>
+                    <div className="flex flex-wrap gap-2 xl:justify-end">
+                      <ActionButton
+                        onClick={() => handleToggleStatus(classItem)}
+                      >
+                        {classItem.is_active ? "Desativar" : "Ativar"}
+                      </ActionButton>
+
+                      <ActionButton
+                        tone="danger"
+                        onClick={() => handleDeleteClass(classItem.id)}
+                      >
+                        Remover
+                      </ActionButton>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </main>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </section>
   );
 }

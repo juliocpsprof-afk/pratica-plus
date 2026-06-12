@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CourseRow,
   createCourse,
@@ -8,39 +8,97 @@ import {
   getCourses,
   updateCourseStatus,
 } from "@/services/courses.service";
-import { getModules, ModuleRow } from "@/services/modules.service";
+
+function Badge({
+  children,
+  tone = "slate",
+}: {
+  children: string;
+  tone?: "slate" | "green" | "red" | "blue";
+}) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    red: "bg-red-50 text-red-700 ring-red-100",
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black ring-1 ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ActionButton({
+  children,
+  tone = "secondary",
+  onClick,
+}: {
+  children: string;
+  tone?: "primary" | "secondary" | "danger";
+  onClick: () => void;
+}) {
+  const tones = {
+    primary:
+      "bg-[#08213f] text-white hover:bg-blue-800 focus:ring-blue-100",
+    secondary:
+      "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-200",
+    danger:
+      "bg-red-600 text-white hover:bg-red-700 focus:ring-red-100",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-black shadow-sm transition focus:outline-none focus:ring-4 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function CoursesManager() {
   const [courses, setCourses] = useState<CourseRow[]>([]);
-  const [modules, setModules] = useState<ModuleRow[]>([]);
   const [name, setName] = useState("");
-  const [moduleId, setModuleId] = useState<string>("");
-  const [workload, setWorkload] = useState("");
+  const [description, setDescription] = useState("");
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  async function loadData() {
+  const activeCount = courses.filter((course) => course.is_active).length;
+
+  const filteredCourses = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) {
+      return courses;
+    }
+
+    return courses.filter((course) => {
+      const text = `${course.name} ${course.description ?? ""}`.toLowerCase();
+      return text.includes(term);
+    });
+  }, [courses, search]);
+
+  async function loadCourses() {
     try {
       setIsLoading(true);
       setError("");
 
-      const [modulesData, coursesData] = await Promise.all([
-        getModules(),
-        getCourses(),
-      ]);
+      const data = await getCourses();
 
-      setModules(modulesData);
-      setCourses(coursesData);
-
-      if (!moduleId && modulesData[0]) {
-        setModuleId(modulesData[0].id);
-      }
+      setCourses(data);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível carregar os dados."
+          : "Não foi possível carregar os cursos."
       );
     } finally {
       setIsLoading(false);
@@ -48,34 +106,31 @@ export function CoursesManager() {
   }
 
   useEffect(() => {
-    loadData();
+    loadCourses();
   }, []);
 
   async function handleCreateCourse() {
     try {
       setError("");
+      setMessage("");
 
       if (!name.trim()) {
         setError("Informe o nome do curso.");
         return;
       }
 
-      if (!workload.trim()) {
-        setError("Informe a carga horária ou duração.");
-        return;
-      }
-
       setIsSaving(true);
 
-      const newCourse = await createCourse({
-        name: name.trim(),
-        moduleId: moduleId || null,
-        workload: workload.trim(),
+      await createCourse({
+        name,
+        description,
       });
 
-      setCourses((currentCourses) => [newCourse, ...currentCourses]);
       setName("");
-      setWorkload("");
+      setDescription("");
+      setMessage("Curso cadastrado com sucesso.");
+
+      await loadCourses();
     } catch (err) {
       setError(
         err instanceof Error
@@ -89,208 +144,208 @@ export function CoursesManager() {
 
   async function handleToggleStatus(course: CourseRow) {
     try {
-      const nextStatus = course.status === "ativo" ? "inativo" : "ativo";
+      setError("");
+      setMessage("");
 
-      await updateCourseStatus(course.id, nextStatus);
+      await updateCourseStatus(course.id, !course.is_active);
 
-      setCourses((currentCourses) =>
-        currentCourses.map((item) =>
-          item.id === course.id ? { ...item, status: nextStatus } : item
-        )
-      );
+      await loadCourses();
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível alterar o status."
+          : "Não foi possível alterar o status do curso."
       );
     }
   }
 
   async function handleDeleteCourse(courseId: string) {
     try {
+      setError("");
+      setMessage("");
+
       await deleteCourse(courseId);
 
-      setCourses((currentCourses) =>
-        currentCourses.filter((course) => course.id !== courseId)
-      );
+      setMessage("Curso removido.");
+      await loadCourses();
     } catch (err) {
       setError(
         err instanceof Error
-          ? err.message
+          ? `${err.message} Se este curso já possui turmas ou alunos vinculados, ele não poderá ser removido.`
           : "Não foi possível remover o curso."
       );
     }
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[420px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Novo curso
-        </p>
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Configuração
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Novo curso
+              </h2>
+            </div>
 
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Organize os cursos da plataforma.
-        </h2>
-
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Agora os cursos são salvos diretamente no Supabase.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Nome do curso
-            </label>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              type="text"
-              placeholder="Ex: Telemarketing Profissional"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+              Total: {courses.length} • Ativos: {activeCount}
+            </div>
           </div>
+        </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Módulo principal
+        <div className="p-5 md:p-6">
+          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                Nome do curso
+              </span>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                type="text"
+                placeholder="Ex: Telemarketing"
+                className="app-input"
+              />
             </label>
-            <select
-              value={moduleId}
-              onChange={(event) => setModuleId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {modules.map((moduleItem) => (
-                <option key={moduleItem.id} value={moduleItem.id}>
-                  {moduleItem.name}
-                </option>
-              ))}
-            </select>
-          </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Carga horária ou duração
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                Descrição
+              </span>
+              <input
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                type="text"
+                placeholder="Resumo curto para identificação do curso"
+                className="app-input"
+              />
             </label>
-            <input
-              value={workload}
-              onChange={(event) => setWorkload(event.target.value)}
-              type="text"
-              placeholder="Ex: 40 horas"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
           </div>
 
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+            <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleCreateCourse}
-            disabled={isSaving}
-            className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? "Salvando..." : "Cadastrar curso"}
-          </button>
-        </div>
-      </aside>
+          {message && (
+            <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {message}
+            </div>
+          )}
 
-      <main className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-              Cursos cadastrados
-            </p>
-            <h2 className="mt-2 text-3xl font-black text-[#08213f]">
-              Grade de cursos
-            </h2>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setName("");
+                setDescription("");
+              }}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+            >
+              Limpar
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateCourse}
+              disabled={isSaving}
+              className="inline-flex items-center justify-center rounded-xl bg-[#08213f] px-6 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "Salvando..." : "Cadastrar curso"}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={loadData}
-            className="rounded-full bg-blue-50 px-5 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100"
-          >
-            Atualizar
-          </button>
         </div>
+      </section>
 
-        {isLoading ? (
-          <div className="mt-8 rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center text-sm font-black text-slate-500">
-            Carregando cursos...
-          </div>
-        ) : courses.length === 0 ? (
-          <div className="mt-8 grid place-items-center rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-4xl shadow-sm">
-              🎓
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Cursos cadastrados
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Lista de cursos
+              </h2>
             </div>
 
-            <h3 className="mt-5 text-2xl font-black text-[#08213f]">
-              Nenhum curso cadastrado.
-            </h3>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar curso..."
+                className="app-input min-w-[240px] px-4 py-2.5 text-sm"
+              />
 
-            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-              Cadastre o primeiro curso para começar a organizar o ambiente.
-            </p>
+              <ActionButton onClick={loadCourses}>Atualizar</ActionButton>
+            </div>
           </div>
-        ) : (
-          <div className="mt-6 grid gap-4">
-            {courses.map((course) => (
-              <article
-                key={course.id}
-                className="rounded-[1.5rem] border border-slate-200 bg-white p-5"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-xl font-black text-[#08213f]">
-                        {course.name}
-                      </h3>
+        </div>
 
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-black ${
-                          course.status === "ativo"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {course.status}
-                      </span>
+        <div className="p-5 md:p-6">
+          {isLoading ? (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              Carregando cursos...
+            </div>
+          ) : filteredCourses.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <h3 className="text-lg font-black text-[#08213f]">
+                Nenhum curso encontrado.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Cadastre um curso ou ajuste a busca.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredCourses.map((course) => (
+                <article
+                  key={course.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                >
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <h3 className="truncate text-base font-black text-[#08213f]">
+                          {course.name}
+                        </h3>
+
+                        <Badge tone={course.is_active ? "green" : "slate"}>
+                          {course.is_active ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </div>
+
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
+                        {course.description || "Sem descrição cadastrada."}
+                      </p>
                     </div>
 
-                    <p className="mt-2 text-sm font-semibold text-slate-500">
-                      {course.modules?.name ?? "Sem módulo"} •{" "}
-                      {course.workload ?? "Sem carga horária"}
-                    </p>
-                  </div>
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <ActionButton
+                        onClick={() => handleToggleStatus(course)}
+                      >
+                        {course.is_active ? "Desativar" : "Ativar"}
+                      </ActionButton>
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(course)}
-                      className="rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 transition hover:bg-blue-100"
-                    >
-                      Alterar status
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCourse(course.id)}
-                      className="rounded-full bg-red-50 px-4 py-2 text-xs font-black text-red-700 transition hover:bg-red-100"
-                    >
-                      Remover
-                    </button>
+                      <ActionButton
+                        tone="danger"
+                        onClick={() => handleDeleteCourse(course.id)}
+                      >
+                        Remover
+                      </ActionButton>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </main>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </section>
   );
 }

@@ -1,15 +1,13 @@
 ﻿import { supabase } from "@/lib/supabase/client";
 
-export type ClassStatus = "ativa" | "encerrada";
-
 export type ClassRow = {
   id: string;
+  course_id: string;
   name: string;
-  course_id: string | null;
-  shift: string;
-  status: ClassStatus;
+  shift: string | null;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
   courses?: {
     id: string;
     name: string;
@@ -18,21 +16,19 @@ export type ClassRow = {
 
 export type CreateClassInput = {
   name: string;
-  courseId: string | null;
+  courseId: string;
   shift: string;
 };
+
+function one<T>(value: T | T[] | null | undefined): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
 
 export async function getClasses(): Promise<ClassRow[]> {
   const { data, error } = await supabase
     .from("classes")
     .select(`
-      id,
-      name,
-      course_id,
-      shift,
-      status,
-      created_at,
-      updated_at,
+      *,
       courses (
         id,
         name
@@ -44,48 +40,35 @@ export async function getClasses(): Promise<ClassRow[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as ClassRow[];
+  const rows = (data ?? []) as any[];
+
+  return rows.map((row) => ({
+    ...row,
+    courses: one(row.courses),
+  })) as ClassRow[];
 }
 
-export async function createClass(input: CreateClassInput): Promise<ClassRow> {
-  const { data, error } = await supabase
-    .from("classes")
-    .insert({
-      name: input.name,
-      course_id: input.courseId,
-      shift: input.shift,
-      status: "ativa",
-    })
-    .select(`
-      id,
-      name,
-      course_id,
-      shift,
-      status,
-      created_at,
-      updated_at,
-      courses (
-        id,
-        name
-      )
-    `)
-    .single();
+export async function createClass(input: CreateClassInput): Promise<void> {
+  const { error } = await supabase.from("classes").insert({
+    name: input.name.trim(),
+    course_id: input.courseId,
+    shift: input.shift,
+    is_active: true,
+  });
 
   if (error) {
     throw new Error(error.message);
   }
-
-  return data as ClassRow;
 }
 
 export async function updateClassStatus(
   classId: string,
-  status: ClassStatus
+  isActive: boolean
 ): Promise<void> {
   const { error } = await supabase
     .from("classes")
     .update({
-      status,
+      is_active: isActive,
       updated_at: new Date().toISOString(),
     })
     .eq("id", classId);
@@ -96,10 +79,7 @@ export async function updateClassStatus(
 }
 
 export async function deleteClass(classId: string): Promise<void> {
-  const { error } = await supabase
-    .from("classes")
-    .delete()
-    .eq("id", classId);
+  const { error } = await supabase.from("classes").delete().eq("id", classId);
 
   if (error) {
     throw new Error(error.message);

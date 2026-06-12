@@ -1,46 +1,24 @@
 ﻿import { supabase } from "@/lib/supabase/client";
 
-export type CourseStatus = "ativo" | "inativo";
-
 export type CourseRow = {
   id: string;
   name: string;
-  module_id: string | null;
-  workload: string | null;
-  status: CourseStatus;
+  description: string | null;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
-  modules?: {
-    id: string;
-    name: string;
-    slug: string;
-  } | null;
+  updated_at: string | null;
 };
 
 export type CreateCourseInput = {
   name: string;
-  moduleId: string | null;
-  workload: string;
+  description?: string;
 };
 
 export async function getCourses(): Promise<CourseRow[]> {
   const { data, error } = await supabase
     .from("courses")
-    .select(`
-      id,
-      name,
-      module_id,
-      workload,
-      status,
-      created_at,
-      updated_at,
-      modules (
-        id,
-        name,
-        slug
-      )
-    `)
-    .order("created_at", { ascending: false });
+    .select("*")
+    .order("name", { ascending: true });
 
   if (error) {
     throw new Error(error.message);
@@ -49,46 +27,26 @@ export async function getCourses(): Promise<CourseRow[]> {
   return (data ?? []) as CourseRow[];
 }
 
-export async function createCourse(input: CreateCourseInput): Promise<CourseRow> {
-  const { data, error } = await supabase
-    .from("courses")
-    .insert({
-      name: input.name,
-      module_id: input.moduleId,
-      workload: input.workload,
-      status: "ativo",
-    })
-    .select(`
-      id,
-      name,
-      module_id,
-      workload,
-      status,
-      created_at,
-      updated_at,
-      modules (
-        id,
-        name,
-        slug
-      )
-    `)
-    .single();
+export async function createCourse(input: CreateCourseInput): Promise<void> {
+  const { error } = await supabase.from("courses").insert({
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    is_active: true,
+  });
 
   if (error) {
     throw new Error(error.message);
   }
-
-  return data as CourseRow;
 }
 
 export async function updateCourseStatus(
   courseId: string,
-  status: CourseStatus
+  isActive: boolean
 ): Promise<void> {
   const { error } = await supabase
     .from("courses")
     .update({
-      status,
+      is_active: isActive,
       updated_at: new Date().toISOString(),
     })
     .eq("id", courseId);
@@ -99,10 +57,7 @@ export async function updateCourseStatus(
 }
 
 export async function deleteCourse(courseId: string): Promise<void> {
-  const { error } = await supabase
-    .from("courses")
-    .delete()
-    .eq("id", courseId);
+  const { error } = await supabase.from("courses").delete().eq("id", courseId);
 
   if (error) {
     throw new Error(error.message);

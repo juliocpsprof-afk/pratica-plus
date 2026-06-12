@@ -1,27 +1,46 @@
 ﻿import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
+import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
 import { CoursesManager } from "@/components/professor/CoursesManager";
 
 export default function ProfessorCoursesPage() {
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
-        <header className="mb-6 rounded-[1.75rem] bg-[#08213f] p-8 text-white">
-          <Link href="/professor" className="text-sm font-black text-[#f7c600] hover:underline">
-            ← Painel do professor
-          </Link>
+      <div className="app-container">
+        <DashboardTopbar area="professor" />
 
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-blue-200">
-            Gestão de cursos
-          </p>
+        <header className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-3xl">
+              <Link
+                href="/professor"
+                className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
+              >
+                ← Voltar ao painel
+              </Link>
 
-          <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
-            Cursos
-          </h1>
+              <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Configuração
+              </p>
 
-          <p className="mt-4 max-w-3xl text-blue-100">
-            Cadastre e organize os cursos usados nas turmas e simulações.
-          </p>
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-[#08213f] md:text-3xl">
+                Cursos
+              </h1>
+
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Cadastre e organize os cursos que serão vinculados às turmas, alunos e simulações.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+              <p className="text-xs font-black uppercase text-slate-400">
+                Tela
+              </p>
+              <p className="mt-1 text-sm font-black text-[#08213f]">
+                Cursos
+              </p>
+            </div>
+          </div>
         </header>
 
         <CoursesManager />

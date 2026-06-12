@@ -2,6 +2,7 @@
 import { generateStudentAccess } from "@/services/auth.service";
 
 export type StudentStatus = "ativo" | "inativo" | "concluido";
+export type StudentAccessMode = "livre" | "trilha";
 
 export type StudentRow = {
   id: string;
@@ -9,6 +10,12 @@ export type StudentRow = {
   course_id: string | null;
   class_id: string | null;
   enrollment_status: StudentStatus;
+  simulation_access_mode: StudentAccessMode;
+  free_allowed_difficulties: string[];
+  trail_current_level: number;
+  trail_unlocked_level: number;
+  trail_min_score_to_advance: number;
+  pedagogical_notes: string | null;
   created_at: string;
   updated_at: string;
   profiles?: {
@@ -35,6 +42,20 @@ export type CreateStudentInput = {
   password: string;
   courseId: string | null;
   classId: string | null;
+  simulationAccessMode?: StudentAccessMode;
+  freeAllowedDifficulties?: string[];
+  trailMinScoreToAdvance?: number;
+  pedagogicalNotes?: string | null;
+};
+
+export type UpdateStudentLearningSettingsInput = {
+  studentId: string;
+  simulationAccessMode: StudentAccessMode;
+  freeAllowedDifficulties: string[];
+  trailCurrentLevel: number;
+  trailUnlockedLevel: number;
+  trailMinScoreToAdvance: number;
+  pedagogicalNotes: string;
 };
 
 export type ResetStudentPasswordResult = {
@@ -51,6 +72,12 @@ export async function getStudents(): Promise<StudentRow[]> {
       course_id,
       class_id,
       enrollment_status,
+      simulation_access_mode,
+      free_allowed_difficulties,
+      trail_current_level,
+      trail_unlocked_level,
+      trail_min_score_to_advance,
+      pedagogical_notes,
       created_at,
       updated_at,
       profiles (
@@ -89,6 +116,65 @@ export async function createStudent(
     p_course_id: input.courseId,
     p_class_id: input.classId,
   });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const { data: profileData, error: profileError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("username", input.username)
+    .single();
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  const { data: studentData, error: studentError } = await supabase
+    .from("students")
+    .select("id")
+    .eq("profile_id", profileData.id)
+    .single();
+
+  if (studentError) {
+    throw new Error(studentError.message);
+  }
+
+  const { error: updateError } = await supabase
+    .from("students")
+    .update({
+      simulation_access_mode: input.simulationAccessMode ?? "livre",
+      free_allowed_difficulties:
+        input.freeAllowedDifficulties ?? ["facil", "medio", "dificil"],
+      trail_current_level: 1,
+      trail_unlocked_level: 1,
+      trail_min_score_to_advance: input.trailMinScoreToAdvance ?? 70,
+      pedagogical_notes: input.pedagogicalNotes ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", studentData.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+}
+
+export async function updateStudentLearningSettings(
+  input: UpdateStudentLearningSettingsInput
+): Promise<void> {
+  const { error } = await supabase
+    .from("students")
+    .update({
+      simulation_access_mode: input.simulationAccessMode,
+      free_allowed_difficulties: input.freeAllowedDifficulties,
+      trail_current_level: input.trailCurrentLevel,
+      trail_unlocked_level: input.trailUnlockedLevel,
+      trail_min_score_to_advance: input.trailMinScoreToAdvance,
+      pedagogical_notes: input.pedagogicalNotes || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.studentId);
 
   if (error) {
     throw new Error(error.message);

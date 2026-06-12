@@ -1,31 +1,43 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { generateStudentAccess } from "@/services/auth.service";
-import { getClasses, ClassRow } from "@/services/classes.service";
-import { getCourses, CourseRow } from "@/services/courses.service";
+import { ClassRow, getClasses } from "@/services/classes.service";
+import { CourseRow, getCourses } from "@/services/courses.service";
 import { createStudent } from "@/services/students.service";
 
-type ImportedStudent = {
-  fullName: string;
+type ImportRow = {
+  name: string;
   username: string;
   password: string;
   status: "pendente" | "importado" | "erro";
-  message?: string;
+  error?: string;
 };
 
-function parseCsv(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(";")[0]?.split(",")[0]?.trim() ?? "")
-    .filter(Boolean);
+function FormLabel({ children }: { children: string }) {
+  return <span className="mb-1.5 block text-xs font-bold text-slate-600">{children}</span>;
 }
 
-function normalizeHeaderOrName(value: string): string {
-  return value.trim().replace(/^nome completo$/i, "").trim();
+function Badge({
+  children,
+  tone = "slate",
+}: {
+  children: string;
+  tone?: "slate" | "blue" | "green" | "red";
+}) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    red: "bg-red-50 text-red-700 ring-red-100",
+  };
+
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${tones[tone]}`}>
+      {children}
+    </span>
+  );
 }
 
 export function ImportStudentsManager() {
@@ -33,34 +45,31 @@ export function ImportStudentsManager() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [courseId, setCourseId] = useState("");
   const [classId, setClassId] = useState("");
-  const [students, setStudents] = useState<ImportedStudent[]>([]);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+
+  const importedCount = rows.filter((row) => row.status === "importado").length;
+  const errorCount = rows.filter((row) => row.status === "erro").length;
+  const pendingCount = rows.filter((row) => row.status === "pendente").length;
+
+  const validRows = useMemo(() => rows.filter((row) => row.name.trim().split(/\s+/).length >= 2), [rows]);
 
   async function loadData() {
     try {
-      const [coursesData, classesData] = await Promise.all([
-        getCourses(),
-        getClasses(),
-      ]);
+      setError("");
+
+      const [coursesData, classesData] = await Promise.all([getCourses(), getClasses()]);
 
       setCourses(coursesData);
       setClasses(classesData);
 
-      if (!courseId && coursesData[0]) {
-        setCourseId(coursesData[0].id);
-      }
-
-      if (!classId && classesData[0]) {
-        setClassId(classesData[0].id);
-      }
+      if (!courseId && coursesData[0]) setCourseId(coursesData[0].id);
+      if (!classId && classesData[0]) setClassId(classesData[0].id);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível carregar cursos e turmas."
-      );
+      setError(err instanceof Error ? err.message : "Não foi possível carregar dados.");
     }
   }
 
@@ -68,294 +77,268 @@ export function ImportStudentsManager() {
     loadData();
   }, []);
 
-  async function handleFileUpload(file: File) {
+  function parseNamesFromSheet(data: unknown[][]): string[] {
+    const names: string[] = [];
+
+    for (const row of data) {
+      const firstCell = String(row[0] ?? "").trim();
+
+      if (!firstCell) continue;
+
+      const lower = firstCell.toLowerCase();
+
+      if (
+        lower.includes("nome completo") ||
+        lower === "nome" ||
+        lower === "aluno"
+      ) {
+        continue;
+      }
+
+      names.push(firstCell);
+    }
+
+    return Array.from(new Set(names));
+  }
+
+  async function handleFileChange(file: File | null) {
     try {
       setError("");
-      setSuccessMessage("");
+      setMessage("");
+      setRows([]);
 
-      const extension = file.name.split(".").pop()?.toLowerCase();
-      let names: string[] = [];
+      if (!file) return;
 
-      if (extension === "csv") {
-        const text = await file.text();
-        names = parseCsv(text);
-      } else if (extension === "xlsx" || extension === "xls") {
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer);
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
-          header: 1,
-        }) as unknown[][];
+      setFileName(file.name);
 
-        names = rows
-          .map((row) => String(row[0] ?? "").trim())
-          .filter(Boolean);
-      } else {
-        setError("Formato inválido. Envie arquivo .csv, .xlsx ou .xls.");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+      const names = parseNamesFromSheet(data);
+
+      if (names.length === 0) {
+        setError("Nenhum nome foi encontrado no arquivo.");
         return;
       }
 
-      const generated = names
-        .map(normalizeHeaderOrName)
-        .filter((name) => name.split(/\s+/).length >= 2)
-        .map((name) => {
-          const access = generateStudentAccess(name);
+      const parsedRows = names.map((name) => {
+        const access = generateStudentAccess(name);
 
-          return {
-            fullName: access.fullName,
-            username: access.username,
-            password: access.password,
-            status: "pendente" as const,
-          };
-        });
+        return {
+          name: access.fullName,
+          username: access.username,
+          password: access.password,
+          status: "pendente" as const,
+        };
+      });
 
-      if (generated.length === 0) {
-        setError("Nenhum nome completo válido foi encontrado no arquivo.");
-        return;
-      }
-
-      setStudents(generated);
+      setRows(parsedRows);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível ler o arquivo."
-      );
+      setError(err instanceof Error ? err.message : "Não foi possível ler o arquivo.");
     }
   }
 
-  async function handleImportStudents() {
+  async function handleImport() {
     try {
       setError("");
-      setSuccessMessage("");
+      setMessage("");
 
-      if (!courseId) {
-        setError("Selecione um curso.");
+      if (!courseId || !classId) {
+        setError("Selecione curso e turma antes de importar.");
         return;
       }
 
-      if (!classId) {
-        setError("Selecione uma turma.");
-        return;
-      }
-
-      if (students.length === 0) {
-        setError("Carregue uma lista antes de importar.");
+      if (validRows.length === 0) {
+        setError("Não há alunos válidos para importar.");
         return;
       }
 
       setIsImporting(true);
 
-      const updatedStudents: ImportedStudent[] = [];
+      const nextRows = [...rows];
 
-      for (const student of students) {
+      for (let index = 0; index < nextRows.length; index++) {
+        const row = nextRows[index];
+
+        if (row.name.trim().split(/\s+/).length < 2) {
+          nextRows[index] = {
+            ...row,
+            status: "erro",
+            error: "Nome incompleto.",
+          };
+          setRows([...nextRows]);
+          continue;
+        }
+
         try {
           await createStudent({
-            fullName: student.fullName,
-            username: student.username,
-            password: student.password,
+            fullName: row.name,
+            username: row.username,
+            password: row.password,
             courseId,
             classId,
+            simulationAccessMode: "livre",
+            freeAllowedDifficulties: ["facil", "medio", "dificil"],
+            trailMinScoreToAdvance: 70,
+            pedagogicalNotes: "",
           });
 
-          updatedStudents.push({
-            ...student,
-            status: "importado",
-            message: "Importado",
-          });
+          nextRows[index] = { ...row, status: "importado" };
         } catch (err) {
-          updatedStudents.push({
-            ...student,
+          nextRows[index] = {
+            ...row,
             status: "erro",
-            message:
-              err instanceof Error ? err.message : "Erro ao importar aluno.",
-          });
+            error: err instanceof Error ? err.message : "Erro ao importar.",
+          };
         }
+
+        setRows([...nextRows]);
       }
 
-      setStudents(updatedStudents);
-      setSuccessMessage("Importação finalizada. Confira os status da lista.");
+      setMessage("Processo de importação finalizado.");
     } finally {
       setIsImporting(false);
     }
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[400px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Importação
-        </p>
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">Importação</p>
+          <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">Importar alunos por planilha</h2>
+        </div>
 
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Importe alunos em lote.
-        </h2>
-
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Envie CSV ou Excel com os nomes completos na primeira coluna. O sistema gera usuário e senha automaticamente.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Curso
+        <div className="p-5 md:p-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px_260px]">
+            <label className="block">
+              <FormLabel>Arquivo Excel ou CSV</FormLabel>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+                className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-[#08213f] file:px-4 file:py-2 file:text-sm file:font-black file:text-white hover:file:bg-blue-800"
+              />
             </label>
-            <select
-              value={courseId}
-              onChange={(event) => setCourseId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {course.name}
-                </option>
-              ))}
-            </select>
+
+            <label className="block">
+              <FormLabel>Curso</FormLabel>
+              <select
+                value={courseId}
+                onChange={(event) => setCourseId(event.target.value)}
+                className="app-input"
+              >
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>{course.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <FormLabel>Turma</FormLabel>
+              <select
+                value={classId}
+                onChange={(event) => setClassId(event.target.value)}
+                className="app-input"
+              >
+                {classes.map((classItem) => (
+                  <option key={classItem.id} value={classItem.id}>{classItem.name}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Turma
-            </label>
-            <select
-              value={classId}
-              onChange={(event) => setClassId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {classes.map((classItem) => (
-                <option key={classItem.id} value={classItem.id}>
-                  {classItem.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Arquivo CSV ou Excel
-            </label>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-
-                if (file) {
-                  handleFileUpload(file);
-                }
-              }}
-              className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-5 text-sm font-bold text-slate-600 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-[#08213f] file:px-4 file:py-2 file:text-sm file:font-black file:text-white hover:bg-white"
-            />
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-blue-50 px-4 py-3 text-blue-700">
+              <p className="text-[11px] font-black uppercase tracking-[0.1em] opacity-80">Arquivo</p>
+              <p className="mt-1 truncate text-sm font-black">{fileName || "Nenhum arquivo"}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700">
+              <p className="text-[11px] font-black uppercase tracking-[0.1em] opacity-80">Pendentes</p>
+              <p className="mt-1 text-2xl font-black">{pendingCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-emerald-50 px-4 py-3 text-emerald-700">
+              <p className="text-[11px] font-black uppercase tracking-[0.1em] opacity-80">Importados</p>
+              <p className="mt-1 text-2xl font-black">{importedCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-red-50 px-4 py-3 text-red-700">
+              <p className="text-[11px] font-black uppercase tracking-[0.1em] opacity-80">Erros</p>
+              <p className="mt-1 text-2xl font-black">{errorCount}</p>
+            </div>
           </div>
 
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
-              {error}
-            </div>
+            <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>
           )}
 
-          {successMessage && (
-            <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-              {successMessage}
-            </div>
+          {message && (
+            <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{message}</div>
           )}
 
-          <button
-            type="button"
-            onClick={handleImportStudents}
-            disabled={isImporting || students.length === 0}
-            className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isImporting ? "Importando..." : "Importar alunos"}
-          </button>
-        </div>
-
-        <div className="mt-6 rounded-[1.5rem] bg-amber-50 p-5">
-          <p className="text-sm font-black text-amber-900">
-            Modelo da planilha
-          </p>
-          <p className="mt-2 text-sm leading-6 text-amber-800">
-            Primeira coluna: Nome Completo. Exemplo: João da Silva Santos.
-          </p>
-        </div>
-      </aside>
-
-      <main className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <div className="border-b border-slate-100 pb-5">
-          <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-            Prévia
-          </p>
-          <h2 className="mt-2 text-3xl font-black text-[#08213f]">
-            Alunos encontrados
-          </h2>
-        </div>
-
-        {students.length === 0 ? (
-          <div className="mt-8 grid place-items-center rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-4xl shadow-sm">
-              📥
-            </div>
-
-            <h3 className="mt-5 text-2xl font-black text-[#08213f]">
-              Nenhum arquivo carregado.
-            </h3>
-
-            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-              Carregue uma planilha para visualizar os acessos gerados.
-            </p>
+          <div className="mt-5 flex justify-end">
+            <button
+              type="button"
+              onClick={handleImport}
+              disabled={isImporting || rows.length === 0}
+              className="inline-flex items-center justify-center rounded-xl bg-[#08213f] px-6 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isImporting ? "Importando..." : "Importar alunos"}
+            </button>
           </div>
-        ) : (
-          <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-slate-200">
-            <div className="hidden grid-cols-[1.4fr_1fr_1fr_1fr] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wide text-slate-500 md:grid">
-              <div>Aluno</div>
-              <div>Usuário</div>
-              <div>Senha</div>
-              <div>Status</div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">Prévia</p>
+          <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">Alunos encontrados</h2>
+        </div>
+
+        <div className="p-5 md:p-6">
+          {rows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <h3 className="text-lg font-black text-[#08213f]">Nenhum arquivo carregado.</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">A primeira coluna deve conter o nome completo dos alunos.</p>
             </div>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((row, index) => (
+                <article key={`${row.username}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_180px_140px] lg:items-center">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-black text-[#08213f]">{row.name}</h3>
+                      {row.error && <p className="mt-1 text-xs font-bold text-red-700">{row.error}</p>}
+                    </div>
 
-            <div className="divide-y divide-slate-200">
-              {students.map((student, index) => (
-                <div
-                  key={`${student.username}-${index}`}
-                  className="grid gap-3 px-5 py-5 text-sm md:grid-cols-[1.4fr_1fr_1fr_1fr]"
-                >
-                  <div className="font-black text-[#08213f]">
-                    {student.fullName}
-                  </div>
+                    <div className="rounded-2xl bg-blue-50 px-4 py-3">
+                      <p className="text-[11px] font-black uppercase text-blue-700">Usuário</p>
+                      <p className="mt-1 truncate text-sm font-black text-[#08213f]">{row.username}</p>
+                    </div>
 
-                  <div className="font-black text-blue-700">
-                    {student.username}
-                  </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-black uppercase text-slate-400">Senha</p>
+                      <p className="mt-1 truncate text-sm font-black text-[#08213f]">{row.password}</p>
+                    </div>
 
-                  <div className="font-black text-slate-700">
-                    {student.password}
-                  </div>
-
-                  <div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-black ${
-                        student.status === "importado"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : student.status === "erro"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
+                    <Badge
+                      tone={
+                        row.status === "importado"
+                          ? "green"
+                          : row.status === "erro"
+                            ? "red"
+                            : "slate"
+                      }
                     >
-                      {student.status}
-                    </span>
-
-                    {student.message && (
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        {student.message}
-                      </p>
-                    )}
+                      {row.status}
+                    </Badge>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
-          </div>
-        )}
-      </main>
+          )}
+        </div>
+      </section>
     </section>
   );
 }

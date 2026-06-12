@@ -6,25 +6,41 @@ import { AttendanceManager } from "@/components/professor/AttendanceManager";
 export default function ProfessorAttendancePage() {
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="app-container">
         <DashboardTopbar area="professor" />
 
-        <header className="mb-6 rounded-[1.75rem] bg-[#08213f] p-8 text-white">
-          <Link href="/professor" className="text-sm font-black text-[#f7c600] hover:underline">
-            ← Painel do professor
-          </Link>
+        <header className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-3xl">
+              <Link
+                href="/professor"
+                className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
+              >
+                ← Voltar ao painel
+              </Link>
 
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-blue-200">
-            Presença
-          </p>
+              <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Aula prática
+              </p>
 
-          <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
-            Chamada da turma
-          </h1>
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-[#08213f] md:text-3xl">
+                Presença dos alunos
+              </h1>
 
-          <p className="mt-4 max-w-3xl text-blue-100">
-            Marque os alunos presentes para organizar equipes e acompanhar participação nas atividades.
-          </p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Marque quem está presente antes de formar equipes ou iniciar uma atividade prática.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+              <p className="text-xs font-black uppercase text-slate-400">
+                Tela
+              </p>
+              <p className="mt-1 text-sm font-black text-[#08213f]">
+                Presença
+              </p>
+            </div>
+          </div>
         </header>
 
         <AttendanceManager />

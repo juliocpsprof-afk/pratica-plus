@@ -6,28 +6,34 @@ import { StudentSimulationRunner } from "@/components/student/StudentSimulationR
 export default function SalesSimulationPage() {
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="app-container">
         <DashboardTopbar area="aluno" />
 
-        <header className="mb-6 rounded-[1.75rem] bg-[#08213f] p-8 text-white">
-          <Link href="/aluno/simulacoes" className="text-sm font-black text-[#f7c600] hover:underline">
-            ← Simuladores
+        <header className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <Link
+            href="/aluno/simulacoes"
+            className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
+          >
+            ← Voltar para simulações
           </Link>
 
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-blue-200">
-            Técnicas de Vendas
+          <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+            Prática individual
           </p>
 
-          <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
-            Simulação real de vendas
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-[#08213f] md:text-3xl">
+            Técnicas de Vendas
           </h1>
 
-          <p className="mt-4 max-w-3xl text-blue-100">
-            Resolva objeções, escolha respostas e registre sua pontuação no histórico.
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Treine abordagem, negociação, contorno de objeções, fechamento e fidelização.
           </p>
         </header>
 
-        <StudentSimulationRunner moduleSlug="vendas" />
+        <StudentSimulationRunner
+          moduleSlug="vendas"
+          moduleTitle="Técnicas de Vendas"
+        />
       </div>
     </AppShell>
   );

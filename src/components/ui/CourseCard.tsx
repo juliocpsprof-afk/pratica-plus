@@ -8,35 +8,48 @@ type CourseCardProps = {
   tag: string;
 };
 
-export function CourseCard({ title, description, image, href, tag }: CourseCardProps) {
+export function CourseCard({
+  title,
+  description,
+  image,
+  href,
+  tag,
+}: CourseCardProps) {
   return (
-    <article className="overflow-hidden rounded-[1.75rem] bg-white shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-1 hover:shadow-xl">
-      <div className="relative h-48 overflow-hidden md:h-56">
-        <img
-          src={image}
-          alt={title}
-          className="h-full w-full object-cover transition duration-500 hover:scale-105"
-        />
+    <Link href={href} className="group block h-full">
+      <article className="flex h-full flex-col overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+        <div className="relative h-44 overflow-hidden bg-slate-100">
+          <img
+            src={image}
+            alt={title}
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
 
-        <span className="absolute left-5 top-5 rounded-full bg-[#f7c600] px-4 py-2 text-xs font-black text-[#08213f]">
-          {tag}
-        </span>
-      </div>
+          <div className="absolute left-4 top-4 rounded-full bg-white/92 px-3 py-1 text-xs font-black text-[#08213f] shadow-sm backdrop-blur">
+            {tag}
+          </div>
+        </div>
 
-      <div className="p-6">
-        <h3 className="text-xl font-black text-[#08213f] md:text-2xl">{title}</h3>
+        <div className="flex flex-1 flex-col p-5">
+          <h3 className="text-xl font-black tracking-tight text-[#08213f]">
+            {title}
+          </h3>
 
-        <p className="mt-3 min-h-14 text-sm leading-6 text-slate-600">
-          {description}
-        </p>
+          <p className="mt-3 flex-1 text-sm font-medium leading-6 text-slate-600">
+            {description}
+          </p>
 
-        <Link
-          href={href}
-          className="mt-5 inline-flex rounded-full bg-[#08213f] px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800"
-        >
-          Iniciar prática
-        </Link>
-      </div>
-    </article>
+          <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+            <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">
+              Simulador
+            </span>
+
+            <span className="rounded-full bg-[#08213f] px-4 py-2 text-xs font-black text-white">
+              Iniciar
+            </span>
+          </div>
+        </div>
+      </article>
+    </Link>
   );
 }

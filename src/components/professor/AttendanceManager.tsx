@@ -1,15 +1,109 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClassRow, getClasses } from "@/services/classes.service";
 import {
   AttendanceStudentRow,
   getStudentsForAttendance,
   saveAttendance,
 } from "@/services/attendance.service";
+import { ClassRow, getClasses } from "@/services/classes.service";
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function Badge({
+  children,
+  tone = "slate",
+}: {
+  children: string;
+  tone?: "slate" | "blue" | "green" | "red" | "amber";
+}) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    red: "bg-red-50 text-red-700 ring-red-100",
+    amber: "bg-amber-50 text-amber-700 ring-amber-100",
+  };
+
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-full px-3 py-1 text-xs font-black ring-1 ${tones[tone]}`}
+    >
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "slate" | "blue" | "green" | "red";
+}) {
+  const tones = {
+    slate: "bg-slate-50 text-slate-700",
+    blue: "bg-blue-50 text-blue-700",
+    green: "bg-emerald-50 text-emerald-700",
+    red: "bg-red-50 text-red-700",
+  };
+
+  return (
+    <div className={`rounded-2xl border border-slate-200 px-4 py-3 ${tones[tone]}`}>
+      <p className="text-[11px] font-black uppercase tracking-[0.1em] opacity-70">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-black tracking-tight">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  tone = "secondary",
+  onClick,
+  disabled = false,
+}: {
+  children: string;
+  tone?: "primary" | "secondary" | "danger" | "success";
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const tones = {
+    primary:
+      "bg-[#08213f] text-white hover:bg-blue-800 focus:ring-blue-100",
+    secondary:
+      "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-200",
+    danger:
+      "bg-red-600 text-white hover:bg-red-700 focus:ring-red-100",
+    success:
+      "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-100",
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-black shadow-sm transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FormLabel({ children }: { children: string }) {
+  return (
+    <span className="mb-1.5 block text-xs font-bold text-slate-600">
+      {children}
+    </span>
+  );
 }
 
 export function AttendanceManager() {
@@ -17,33 +111,42 @@ export function AttendanceManager() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(getTodayDate());
   const [students, setStudents] = useState<AttendanceStudentRow[]>([]);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [isLoadingClasses, setIsLoadingClasses] = useState(true);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const selectedClass = useMemo(() => {
-    return classes.find((classItem) => classItem.id === selectedClassId);
-  }, [classes, selectedClassId]);
+  const selectedClass = classes.find((item) => item.id === selectedClassId) ?? null;
 
   const presentCount = students.filter((student) => student.is_present).length;
   const absentCount = students.length - presentCount;
 
+  const filteredStudents = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) {
+      return students;
+    }
+
+    return students.filter((student) => {
+      const text = `${student.full_name} ${student.username}`.toLowerCase();
+      return text.includes(term);
+    });
+  }, [students, search]);
+
   async function loadClasses() {
     try {
-      setError("");
       setIsLoadingClasses(true);
+      setError("");
 
-      const classesData = await getClasses();
-      const activeClasses = classesData.filter(
-        (classItem) => classItem.status === "ativa"
-      );
+      const data = await getClasses();
 
-      setClasses(activeClasses);
+      setClasses(data);
 
-      if (!selectedClassId && activeClasses[0]) {
-        setSelectedClassId(activeClasses[0].id);
+      if (!selectedClassId && data[0]) {
+        setSelectedClassId(data[0].id);
       }
     } catch (err) {
       setError(
@@ -57,23 +160,24 @@ export function AttendanceManager() {
   }
 
   async function loadStudents(classId = selectedClassId, date = attendanceDate) {
-    if (!classId) {
-      setStudents([]);
-      return;
-    }
-
     try {
-      setError("");
-      setSuccessMessage("");
       setIsLoadingStudents(true);
+      setError("");
+      setMessage("");
 
-      const studentsData = await getStudentsForAttendance(classId, date);
-      setStudents(studentsData);
+      if (!classId) {
+        setStudents([]);
+        return;
+      }
+
+      const data = await getStudentsForAttendance(classId, date);
+
+      setStudents(data);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível carregar os alunos."
+          : "Não foi possível carregar os alunos da turma."
       );
     } finally {
       setIsLoadingStudents(false);
@@ -90,7 +194,7 @@ export function AttendanceManager() {
     }
   }, [selectedClassId, attendanceDate]);
 
-  function toggleStudentPresence(studentId: string) {
+  function toggleStudent(studentId: string) {
     setStudents((currentStudents) =>
       currentStudents.map((student) =>
         student.student_id === studentId
@@ -100,25 +204,31 @@ export function AttendanceManager() {
     );
   }
 
-  function markAllAsPresent() {
+  function markAllPresent() {
     setStudents((currentStudents) =>
-      currentStudents.map((student) => ({ ...student, is_present: true }))
+      currentStudents.map((student) => ({
+        ...student,
+        is_present: true,
+      }))
     );
   }
 
-  function markAllAsAbsent() {
+  function markAllAbsent() {
     setStudents((currentStudents) =>
-      currentStudents.map((student) => ({ ...student, is_present: false }))
+      currentStudents.map((student) => ({
+        ...student,
+        is_present: false,
+      }))
     );
   }
 
   async function handleSaveAttendance() {
     try {
       setError("");
-      setSuccessMessage("");
+      setMessage("");
 
       if (!selectedClassId) {
-        setError("Selecione uma turma.");
+        setError("Selecione uma turma antes de salvar a presença.");
         return;
       }
 
@@ -133,7 +243,7 @@ export function AttendanceManager() {
         })),
       });
 
-      setSuccessMessage("Presença salva com sucesso.");
+      setMessage("Presença salva com sucesso.");
       await loadStudents(selectedClassId, attendanceDate);
     } catch (err) {
       setError(
@@ -147,210 +257,206 @@ export function AttendanceManager() {
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[390px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Chamada
-        </p>
+    <section className="space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Chamada
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Controle de presença
+              </h2>
+            </div>
 
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Marque a presença antes da prática.
-        </h2>
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+              {selectedClass ? selectedClass.name : "Selecione uma turma"}
+            </div>
+          </div>
+        </div>
 
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Os alunos presentes poderão ser usados depois para sorteio de equipes
-          e simulações em grupo.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Data da presença
+        <div className="p-5 md:p-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
+            <label className="block">
+              <FormLabel>Turma</FormLabel>
+              <select
+                value={selectedClassId}
+                onChange={(event) => setSelectedClassId(event.target.value)}
+                className="app-input"
+                disabled={isLoadingClasses}
+              >
+                {classes.length === 0 ? (
+                  <option value="">Nenhuma turma cadastrada</option>
+                ) : (
+                  classes.map((classItem) => (
+                    <option key={classItem.id} value={classItem.id}>
+                      {classItem.name} • {classItem.courses?.name ?? "Curso não informado"}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
-            <input
-              value={attendanceDate}
-              onChange={(event) => setAttendanceDate(event.target.value)}
-              type="date"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
+
+            <label className="block">
+              <FormLabel>Data da presença</FormLabel>
+              <input
+                value={attendanceDate}
+                onChange={(event) => setAttendanceDate(event.target.value)}
+                type="date"
+                className="app-input"
+              />
+            </label>
+
+            <label className="block">
+              <FormLabel>Buscar aluno</FormLabel>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                type="text"
+                placeholder="Nome ou usuário"
+                className="app-input"
+              />
+            </label>
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Turma
-            </label>
-            <select
-              value={selectedClassId}
-              onChange={(event) => setSelectedClassId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {classes.map((classItem) => (
-                <option key={classItem.id} value={classItem.id}>
-                  {classItem.name}
-                </option>
-              ))}
-            </select>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <StatCard label="Total" value={students.length} tone="blue" />
+            <StatCard label="Presentes" value={presentCount} tone="green" />
+            <StatCard label="Ausentes" value={absentCount} tone="red" />
           </div>
-
-          {isLoadingClasses && (
-            <div className="rounded-2xl bg-blue-50 p-4 text-sm font-bold text-blue-700">
-              Carregando turmas...
-            </div>
-          )}
-
-          {classes.length === 0 && !isLoadingClasses && (
-            <div className="rounded-2xl bg-amber-50 p-4 text-sm font-bold text-amber-800">
-              Nenhuma turma ativa encontrada. Crie uma turma antes de lançar presença.
-            </div>
-          )}
 
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+            <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-              {successMessage}
+          {message && (
+            <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {message}
             </div>
           )}
 
-          <div className="grid gap-3">
-            <button
-              type="button"
-              onClick={markAllAsPresent}
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <ActionButton
+              onClick={markAllPresent}
+              tone="success"
               disabled={students.length === 0}
-              className="w-full rounded-full bg-emerald-600 px-7 py-4 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Marcar todos presentes
-            </button>
+            </ActionButton>
 
-            <button
-              type="button"
-              onClick={markAllAsAbsent}
+            <ActionButton
+              onClick={markAllAbsent}
+              tone="secondary"
               disabled={students.length === 0}
-              className="w-full rounded-full bg-slate-100 px-7 py-4 text-sm font-black text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Marcar todos ausentes
-            </button>
+              Limpar presença
+            </ActionButton>
 
-            <button
-              type="button"
+            <ActionButton
               onClick={handleSaveAttendance}
+              tone="primary"
               disabled={isSaving || students.length === 0}
-              className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? "Salvando..." : "Salvar presença"}
-            </button>
+            </ActionButton>
           </div>
         </div>
+      </section>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-emerald-50 p-4">
-            <p className="text-xs font-black uppercase text-emerald-700">
-              Presentes
-            </p>
-            <p className="mt-1 text-3xl font-black text-emerald-800">
-              {presentCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-red-50 p-4">
-            <p className="text-xs font-black uppercase text-red-700">
-              Ausentes
-            </p>
-            <p className="mt-1 text-3xl font-black text-red-800">
-              {absentCount}
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      <main className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-              Lista de presença
-            </p>
-            <h2 className="mt-2 text-3xl font-black text-[#08213f]">
-              {selectedClass?.name ?? "Selecione uma turma"}
-            </h2>
-            <p className="mt-2 text-sm font-semibold text-slate-500">
-              Data: {attendanceDate}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => loadStudents()}
-            disabled={!selectedClassId}
-            className="rounded-full bg-blue-50 px-5 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Atualizar
-          </button>
-        </div>
-
-        {isLoadingStudents ? (
-          <div className="mt-8 rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center text-sm font-black text-slate-500">
-            Carregando alunos...
-          </div>
-        ) : students.length === 0 ? (
-          <div className="mt-8 grid place-items-center rounded-[1.5rem] bg-[#f4f8fc] p-10 text-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-4xl shadow-sm">
-              ✅
+      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Alunos da turma
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Lista de chamada
+              </h2>
             </div>
 
-            <h3 className="mt-5 text-2xl font-black text-[#08213f]">
-              Nenhum aluno encontrado nesta turma.
-            </h3>
-
-            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-              Cadastre alunos e vincule-os a esta turma para lançar presença.
-            </p>
+            <ActionButton
+              onClick={() => loadStudents(selectedClassId, attendanceDate)}
+              tone="secondary"
+              disabled={!selectedClassId || isLoadingStudents}
+            >
+              Atualizar lista
+            </ActionButton>
           </div>
-        ) : (
-          <div className="mt-6 grid gap-3">
-            {students.map((student) => (
-              <article
-                key={student.student_id}
-                className={`flex flex-col gap-4 rounded-[1.25rem] border p-5 transition md:flex-row md:items-center md:justify-between ${
-                  student.is_present
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div>
-                  <p className="text-lg font-black text-[#08213f]">
-                    {student.full_name}
-                  </p>
+        </div>
 
-                  <p className="mt-1 text-sm font-semibold text-slate-500">
-                    Usuário: {student.username}
-                  </p>
+        <div className="p-5 md:p-6">
+          {isLoadingStudents ? (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              Carregando alunos...
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <h3 className="text-lg font-black text-[#08213f]">
+                Nenhum aluno encontrado.
+              </h3>
 
-                  <p className="mt-1 text-xs font-bold text-slate-400">
-                    {student.course_name ?? "Sem curso"} •{" "}
-                    {student.class_name ?? "Sem turma"}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => toggleStudentPresence(student.student_id)}
-                  className={`rounded-full px-5 py-3 text-sm font-black transition ${
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Verifique a turma selecionada ou ajuste a busca.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredStudents.map((student) => (
+                <article
+                  key={student.student_id}
+                  className={`rounded-2xl border p-4 shadow-sm transition ${
                     student.is_present
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "border-emerald-200 bg-emerald-50/50"
+                      : "border-slate-200 bg-white hover:border-blue-200"
                   }`}
                 >
-                  {student.is_present ? "Presente" : "Ausente"}
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </main>
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-black text-[#08213f]">
+                        {student.full_name}
+                      </h3>
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge tone="blue">@{student.username}</Badge>
+
+                        <Badge
+                          tone={
+                            student.enrollment_status === "ativo"
+                              ? "green"
+                              : "slate"
+                          }
+                        >
+                          {student.enrollment_status}
+                        </Badge>
+
+                        <Badge tone={student.is_present ? "green" : "red"}>
+                          {student.is_present ? "Presente" : "Ausente"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleStudent(student.student_id)}
+                      className={`inline-flex min-w-[150px] items-center justify-center rounded-xl px-5 py-3 text-sm font-black shadow-sm transition focus:outline-none focus:ring-4 ${
+                        student.is_present
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-100"
+                          : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-200"
+                      }`}
+                    >
+                      {student.is_present ? "Confirmado" : "Marcar presença"}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </section>
   );
 }
