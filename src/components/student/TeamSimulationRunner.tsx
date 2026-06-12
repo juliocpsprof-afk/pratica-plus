@@ -1,100 +1,204 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSession } from "@/lib/session/session.client";
+import { getTechnicalFeedback } from "@/lib/feedback/technicalFeedback";
 import {
-  getActiveScenariosByModuleSlug,
+  getAvailableScenariosForStudent,
   getSimulationScenarioDetails,
   getStudentByProfileId,
   getStudentTeams,
   saveSimulationResult,
-  SimulationOption,
+  SimulationAnswerInput,
   SimulationScenario,
   SimulationScenarioDetails,
   StudentByProfile,
   StudentTeam,
 } from "@/services/simulation.service";
-import { TypingDots } from "@/components/student/TypingDots";
 
 type ChatMessage = {
   id: string;
-  sender: "system" | "customer" | "team" | "feedback";
+  author: "cliente" | "equipe" | "sistema";
   text: string;
-  time: string;
   score?: number;
-  isBest?: boolean;
 };
 
-function getCurrentTime() {
-  return new Date().toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function difficultyLabel(value: string) {
+  if (value === "facil") return "Fácil";
+  if (value === "medio") return "Médio";
+  if (value === "dificil") return "Difícil";
+  return value;
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function difficultyClass(value: string) {
+  if (value === "facil") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (value === "medio") return "bg-amber-50 text-amber-700 ring-amber-100";
+  return "bg-red-50 text-red-700 ring-red-100";
+}
+
+function Badge({
+  children,
+  tone = "slate",
+}: {
+  children: string;
+  tone?: "slate" | "blue" | "green";
+}) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 ring-slate-200",
+    blue: "bg-blue-50 text-blue-700 ring-blue-100",
+    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  };
+
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+function MessageBubble({
+  message,
+  customerName,
+  teamName,
+}: {
+  message: ChatMessage;
+  customerName: string;
+  teamName: string;
+}) {
+  if (message.author === "sistema") {
+    return (
+      <div className="mx-auto max-w-[88%] rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-blue-950">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-blue-700">
+            Feedback técnico
+          </p>
+
+          {typeof message.score === "number" && (
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-blue-700 ring-1 ring-blue-100">
+              {message.score} pts
+            </span>
+          )}
+        </div>
+
+        <p className="whitespace-pre-line text-sm leading-6">
+          {message.text}
+        </p>
+      </div>
+    );
+  }
+
+  const isTeam = message.author === "equipe";
+
+  return (
+    <div className={`flex ${isTeam ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[78%] ${isTeam ? "text-right" : "text-left"}`}>
+        <p className={`mb-1 px-1 text-[11px] font-black uppercase tracking-[0.1em] ${
+          isTeam ? "text-blue-700" : "text-slate-500"
+        }`}>
+          {isTeam ? teamName : customerName}
+        </p>
+
+        <div
+          className={`rounded-2xl px-4 py-3 shadow-sm ${
+            isTeam
+              ? "rounded-br-md bg-[#08213f] text-white"
+              : "rounded-bl-md border border-slate-200 bg-white text-slate-800"
+          }`}
+        >
+          <p className="whitespace-pre-line text-sm leading-6">
+            {message.text}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function TeamSimulationRunner() {
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [student, setStudent] = useState<StudentByProfile | null>(null);
   const [teams, setTeams] = useState<StudentTeam[]>([]);
-  const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [selectedModule, setSelectedModule] = useState<"telemarketing" | "vendas">(
+  const [moduleSlug, setModuleSlug] = useState<"telemarketing" | "vendas">(
     "telemarketing"
   );
+  const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
   const [scenarioDetails, setScenarioDetails] =
     useState<SimulationScenarioDetails | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [selectedOption, setSelectedOption] = useState<SimulationOption | null>(
-    null
-  );
-  const [isCustomerTyping, setIsCustomerTyping] = useState(false);
-  const [isFeedbackTyping, setIsFeedbackTyping] = useState(false);
+  const [answers, setAnswers] = useState<SimulationAnswerInput[]>([]);
+  const [totalScore, setTotalScore] = useState(0);
+  const [isFinished, setIsFinished] = useState(false);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const selectedTeam = teams.find((team) => team.team_id === selectedTeamId);
+  const selectedTeam =
+    teams.find((team) => team.id === selectedTeamId) ?? null;
+
+  const currentStep = scenarioDetails?.steps[currentStepIndex] ?? null;
+
+  const averageScore = useMemo(() => {
+    if (answers.length === 0) return 0;
+    return Math.round(totalScore / answers.length);
+  }, [answers.length, totalScore]);
+
+  function scrollChatToBottom() {
+    const box = chatBoxRef.current;
+
+    if (!box) {
+      return;
+    }
+
+    box.scrollTop = box.scrollHeight;
+  }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isCustomerTyping, isFeedbackTyping]);
+    const timer = window.setTimeout(scrollChatToBottom, 80);
 
-  async function loadInitialData() {
+    return () => window.clearTimeout(timer);
+  }, [messages, isFinished]);
+
+  async function loadBaseData(currentModule = moduleSlug) {
     try {
-      setError("");
       setIsLoading(true);
+      setError("");
 
-      const session = getSession();
+      const session = getSession() as any;
+      const profileId = session?.profileId ?? session?.id;
 
-      if (!session) {
-        setError("Sessão não encontrada. Faça login novamente.");
+      if (!profileId) {
+        setError("Sessão do aluno não encontrada. Faça login novamente.");
         return;
       }
 
-      const studentData = await getStudentByProfileId(session.profileId);
+      const studentData = await getStudentByProfileId(profileId);
 
       if (!studentData) {
-        setError("Aluno não encontrado.");
+        setError("Cadastro de aluno não encontrado para este usuário.");
         return;
       }
 
+      const [teamsData, scenariosData] = await Promise.all([
+        getStudentTeams(studentData.id),
+        getAvailableScenariosForStudent(currentModule, studentData, "todos"),
+      ]);
+
       setStudent(studentData);
-
-      const teamsData = await getStudentTeams(studentData.id);
       setTeams(teamsData);
+      setScenarios(scenariosData);
 
-      if (teamsData[0]) {
-        setSelectedTeamId(teamsData[0].team_id);
+      if (!selectedTeamId && teamsData[0]) {
+        setSelectedTeamId(teamsData[0].id);
       }
 
-      await loadScenarios(selectedModule);
+      if (!selectedScenarioId && scenariosData[0]) {
+        setSelectedScenarioId(scenariosData[0].id);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -106,445 +210,427 @@ export function TeamSimulationRunner() {
     }
   }
 
-  async function loadScenarios(moduleSlug: "telemarketing" | "vendas") {
-    const scenariosData = await getActiveScenariosByModuleSlug(moduleSlug);
-    setScenarios(scenariosData);
+  useEffect(() => {
+    loadBaseData();
+  }, []);
 
-    if (scenariosData[0]) {
-      setSelectedScenarioId(scenariosData[0].id);
-    } else {
-      setSelectedScenarioId("");
-      setScenarioDetails(null);
-      setMessages([]);
-    }
-  }
-
-  async function startTeamChat(details: SimulationScenarioDetails | null) {
+  async function handleModuleChange(value: "telemarketing" | "vendas") {
+    setModuleSlug(value);
+    setSelectedScenarioId("");
+    setScenarioDetails(null);
     setMessages([]);
-    setSelectedOption(null);
-    setSuccessMessage("");
-
-    if (!details) {
-      return;
-    }
-
-    setMessages([
-      {
-        id: crypto.randomUUID(),
-        sender: "system",
-        text: "Simulação em equipe iniciada. Conversem entre vocês e escolham a melhor resposta para o cliente.",
-        time: getCurrentTime(),
-      },
-    ]);
-
-    await wait(800);
-    setIsCustomerTyping(true);
-
-    await wait(1300);
-    setIsCustomerTyping(false);
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        sender: "customer",
-        text: details.step?.customer_message ?? "Olá, preciso de ajuda.",
-        time: getCurrentTime(),
-      },
-    ]);
+    setAnswers([]);
+    setTotalScore(0);
+    setIsFinished(false);
+    await loadBaseData(value);
   }
 
-  async function loadScenarioDetails(scenarioId: string) {
+  async function startScenario() {
     try {
       setError("");
-      setSuccessMessage("");
-      setSelectedOption(null);
+      setIsStarting(true);
+      setIsFinished(false);
+      setAnswers([]);
+      setTotalScore(0);
+      setCurrentStepIndex(0);
 
-      if (!scenarioId) {
-        setScenarioDetails(null);
-        setMessages([]);
+      if (!selectedTeamId) {
+        setError("Selecione uma equipe para iniciar.");
         return;
       }
 
-      const details = await getSimulationScenarioDetails(scenarioId);
+      if (!selectedScenarioId) {
+        setError("Selecione um cenário para iniciar.");
+        return;
+      }
+
+      const details = await getSimulationScenarioDetails(selectedScenarioId);
+
+      if (details.steps.length === 0) {
+        setError("Este cenário ainda não possui etapas cadastradas.");
+        return;
+      }
+
       setScenarioDetails(details);
-      await startTeamChat(details);
+
+      setMessages([
+        {
+          id: `cliente-${details.steps[0].id}`,
+          author: "cliente",
+          text: details.steps[0].customer_message,
+        },
+      ]);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível carregar o cenário."
+          : "Não foi possível iniciar a simulação."
       );
+    } finally {
+      setIsStarting(false);
     }
   }
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  useEffect(() => {
-    loadScenarios(selectedModule);
-  }, [selectedModule]);
-
-  useEffect(() => {
-    if (selectedScenarioId) {
-      loadScenarioDetails(selectedScenarioId);
+  async function handleSelectOption(optionId: string) {
+    if (!scenarioDetails || !currentStep || !student || !selectedTeam || isSaving || isFinished) {
+      return;
     }
-  }, [selectedScenarioId]);
 
-  async function handleChooseOption(option: SimulationOption) {
+    const selectedOption = currentStep.options.find(
+      (option) => option.id === optionId
+    );
+
+    if (!selectedOption) {
+      return;
+    }
+
+    const technicalFeedback = getTechnicalFeedback({
+      moduleSlug,
+      score: selectedOption.score,
+      technicalFocus: scenarioDetails.technical_focus,
+      learningObjective: scenarioDetails.learning_objective,
+      sourceLesson: scenarioDetails.source_lesson,
+    });
+
+    const finalFeedback = selectedOption.feedback
+      ? `${selectedOption.feedback}\n\n${technicalFeedback}`
+      : technicalFeedback;
+
+    const nextAnswer: SimulationAnswerInput = {
+      stepId: currentStep.id,
+      optionId: selectedOption.id,
+      score: selectedOption.score,
+      feedback: finalFeedback,
+    };
+
+    const nextAnswers = [...answers, nextAnswer];
+    const nextTotalScore = totalScore + selectedOption.score;
+
+    setAnswers(nextAnswers);
+    setTotalScore(nextTotalScore);
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: `equipe-${selectedOption.id}`,
+        author: "equipe",
+        text: selectedOption.option_text,
+      },
+      {
+        id: `sistema-${selectedOption.id}`,
+        author: "sistema",
+        text: finalFeedback,
+        score: selectedOption.score,
+      },
+    ]);
+
+    const nextStepIndex = currentStepIndex + 1;
+
+    if (nextStepIndex < scenarioDetails.steps.length) {
+      const nextStep = scenarioDetails.steps[nextStepIndex];
+
+      setCurrentStepIndex(nextStepIndex);
+
+      window.setTimeout(() => {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: `cliente-${nextStep.id}`,
+            author: "cliente",
+            text: nextStep.customer_message,
+          },
+        ]);
+      }, 450);
+
+      return;
+    }
+
     try {
-      setError("");
-      setSuccessMessage("");
-      setSelectedOption(option);
-
-      if (!student) {
-        setError("Aluno não encontrado.");
-        return;
-      }
-
-      if (!selectedTeam) {
-        setError("Selecione uma equipe.");
-        return;
-      }
-
-      if (!scenarioDetails?.step) {
-        setError("Cenário sem etapa válida.");
-        return;
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          sender: "team",
-          text: option.option_text,
-          time: getCurrentTime(),
-        },
-      ]);
-
       setIsSaving(true);
+
+      const finalAverage = Math.round(nextTotalScore / nextAnswers.length);
 
       await saveSimulationResult({
         scenarioId: scenarioDetails.id,
         studentId: student.id,
-        teamId: selectedTeam.team_id,
         classId: selectedTeam.class_id ?? student.class_id,
+        teamId: selectedTeam.id,
+        moduleSlug,
         mode: "equipe",
-        stepId: scenarioDetails.step.id,
-        optionId: option.id,
-        score: option.score,
-        moduleSlug: selectedModule,
+        totalScore: finalAverage,
+        answers: nextAnswers,
       });
 
-      await wait(700);
-      setIsFeedbackTyping(true);
-
-      await wait(1100);
-      setIsFeedbackTyping(false);
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          sender: "feedback",
-          text:
-            option.feedback ??
-            "Resposta da equipe registrada. Continuem praticando a tomada de decisão em grupo.",
-          time: getCurrentTime(),
-          score: option.score,
-          isBest: option.is_best_option,
-        },
-      ]);
-
-      setSuccessMessage("Simulação em equipe salva com competências.");
+      setIsFinished(true);
+      await loadBaseData(moduleSlug);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível salvar a simulação em equipe."
+          : "Não foi possível salvar o resultado da equipe."
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  function restartScenario() {
-    if (scenarioDetails) {
-      startTeamChat(scenarioDetails);
-    }
+  function restart() {
+    setScenarioDetails(null);
+    setMessages([]);
+    setAnswers([]);
+    setTotalScore(0);
+    setCurrentStepIndex(0);
+    setIsFinished(false);
   }
 
+  const customerName = scenarioDetails?.customer_name || "Cliente";
+  const teamName = selectedTeam?.name || "Equipe";
+
   return (
-    <section className="grid gap-6 lg:grid-cols-[340px_1fr]">
-      <aside className="rounded-[1.75rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-700">
-          Modo equipe
-        </p>
-
-        <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Simulação em grupo com cara de chat.
-        </h2>
-
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          A equipe escolhe a resposta e o sistema registra pontuação, histórico e competências.
-        </p>
-
-        <div className="mt-6 space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Equipe
-            </label>
-            <select
-              value={selectedTeamId}
-              onChange={(event) => setSelectedTeamId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {teams.map((team) => (
-                <option key={team.team_id} value={team.team_id}>
-                  {team.team_name} {team.role_name ? `• ${team.role_name}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Módulo
-            </label>
-            <select
-              value={selectedModule}
-              onChange={(event) =>
-                setSelectedModule(event.target.value as "telemarketing" | "vendas")
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              <option value="telemarketing">Telemarketing</option>
-              <option value="vendas">Técnicas de Vendas</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-black text-slate-700">
-              Cenário
-            </label>
-            <select
-              value={selectedScenarioId}
-              onChange={(event) => setSelectedScenarioId(event.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-bold outline-none transition focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            >
-              {scenarios.map((scenario) => (
-                <option key={scenario.id} value={scenario.id}>
-                  {scenario.title}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {isLoading && (
-            <div className="rounded-2xl bg-blue-50 p-4 text-sm font-bold text-blue-700">
-              Carregando...
+    <section className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Simulação em equipe
+              </p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">
+                Atendimento colaborativo
+              </h2>
             </div>
-          )}
 
+            {selectedTeam && (
+              <div className="flex flex-wrap gap-2">
+                <Badge tone="blue">{selectedTeam.name}</Badge>
+                {selectedTeam.role && <Badge tone="green">{selectedTeam.role}</Badge>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5">
           {error && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+            <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-              {successMessage}
+          {isLoading ? (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              Carregando dados da equipe...
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_minmax(0,1fr)_180px]">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                  Equipe
+                </span>
+                <select
+                  value={selectedTeamId}
+                  onChange={(event) => setSelectedTeamId(event.target.value)}
+                  className="app-input px-4 py-2.5 text-sm"
+                  disabled={Boolean(scenarioDetails)}
+                >
+                  {teams.length === 0 ? (
+                    <option value="">Nenhuma equipe encontrada</option>
+                  ) : (
+                    teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name} • {team.class_name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                  Módulo
+                </span>
+                <select
+                  value={moduleSlug}
+                  onChange={(event) =>
+                    handleModuleChange(event.target.value as "telemarketing" | "vendas")
+                  }
+                  className="app-input px-4 py-2.5 text-sm"
+                  disabled={Boolean(scenarioDetails)}
+                >
+                  <option value="telemarketing">Telemarketing</option>
+                  <option value="vendas">Vendas</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-bold text-slate-600">
+                  Cenário
+                </span>
+                <select
+                  value={selectedScenarioId}
+                  onChange={(event) => setSelectedScenarioId(event.target.value)}
+                  className="app-input px-4 py-2.5 text-sm"
+                  disabled={Boolean(scenarioDetails)}
+                >
+                  {scenarios.length === 0 ? (
+                    <option value="">Nenhum cenário disponível</option>
+                  ) : (
+                    scenarios.map((scenario) => (
+                      <option key={scenario.id} value={scenario.id}>
+                        {scenario.title}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <div className="flex items-end">
+                {!scenarioDetails ? (
+                  <button
+                    type="button"
+                    onClick={startScenario}
+                    disabled={isStarting || teams.length === 0 || scenarios.length === 0}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-[#08213f] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isStarting ? "Iniciando..." : "Iniciar"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={restart}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                  >
+                    Trocar
+                  </button>
+                )}
+              </div>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={restartScenario}
-            disabled={!scenarioDetails}
-            className="w-full rounded-full bg-[#08213f] px-7 py-4 text-sm font-black text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Reiniciar conversa
-          </button>
         </div>
-      </aside>
+      </section>
 
-      <main className="overflow-hidden rounded-[1.75rem] bg-white shadow-sm ring-1 ring-slate-200">
-        <header className="bg-gradient-to-r from-[#08213f] to-blue-700 px-5 py-4 text-white">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-lg font-black ring-2 ring-white/30">
-              EQ
-            </div>
+      {scenarioDetails && (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-[#08213f] px-5 py-3 text-white">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">
+                  {customerName}
+                </p>
+                <p className="truncate text-xs font-semibold text-blue-100">
+                  Atendimento com {teamName}
+                </p>
+              </div>
 
-            <div className="min-w-0 flex-1">
-              <h1 className="truncate text-lg font-black">
-                {selectedTeam?.team_name ?? "Equipe"}
-              </h1>
-              <div className="mt-1 flex items-center gap-2 text-xs font-bold text-white/80">
-                <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                {isCustomerTyping ? "cliente digitando..." : "simulação em equipe"}
+              <div className="flex shrink-0 gap-2">
+                <span className={`rounded-full px-3 py-1 text-xs font-black ring-1 ${difficultyClass(scenarioDetails.difficulty)}`}>
+                  {difficultyLabel(scenarioDetails.difficulty)}
+                </span>
+
+                <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-black text-white ring-1 ring-white/20">
+                  {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)}/{scenarioDetails.steps.length}
+                </span>
+              </div>
+            </header>
+
+            <div
+              ref={chatBoxRef}
+              className="h-[430px] overflow-y-auto bg-slate-100 px-5 py-4"
+            >
+              <div className="space-y-4">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    customerName={customerName}
+                    teamName={teamName}
+                  />
+                ))}
+
+                {isSaving && (
+                  <div className="mx-auto w-fit rounded-full bg-white px-4 py-2 text-xs font-black text-slate-500 shadow-sm ring-1 ring-slate-200">
+                    Salvando...
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="hidden rounded-full bg-white/15 px-4 py-2 text-xs font-black md:block">
-              {selectedModule === "telemarketing" ? "Atendimento" : "Vendas"}
-            </div>
-          </div>
-        </header>
-
-        <section className="min-h-[620px] bg-[radial-gradient(circle_at_top_left,#dbeafe,transparent_28%),linear-gradient(180deg,#f8fafc,#eef4f8)]">
-          <div className="mx-auto flex min-h-[620px] max-w-4xl flex-col">
-            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6">
-              {messages.map((message) => {
-                if (message.sender === "system") {
-                  return (
-                    <div key={message.id} className="flex justify-center">
-                      <div className="max-w-md rounded-full bg-white/80 px-4 py-2 text-center text-xs font-bold text-slate-500 shadow-sm ring-1 ring-slate-200">
-                        {message.text}
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (message.sender === "team") {
-                  return (
-                    <div key={message.id} className="flex justify-end">
-                      <div className="max-w-[78%] rounded-3xl rounded-br-md bg-[#dcf8c6] px-5 py-4 shadow-sm">
-                        <p className="mb-1 text-xs font-black text-emerald-800">
-                          {selectedTeam?.team_name ?? "Equipe"}
-                        </p>
-                        <p className="text-sm font-bold leading-6 text-[#123524]">
-                          {message.text}
-                        </p>
-                        <p className="mt-2 text-right text-[11px] font-bold text-emerald-800/60">
-                          {message.time} ✓✓
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (message.sender === "feedback") {
-                  return (
-                    <div key={message.id} className="flex justify-center">
-                      <div
-                        className={`max-w-xl rounded-[1.5rem] p-5 shadow-sm ring-1 ${
-                          message.isBest
-                            ? "bg-emerald-50 ring-emerald-200"
-                            : "bg-amber-50 ring-amber-200"
-                        }`}
-                      >
-                        <p
-                          className={`text-xs font-black uppercase tracking-[0.18em] ${
-                            message.isBest ? "text-emerald-700" : "text-amber-700"
-                          }`}
-                        >
-                          Feedback da simulação
-                        </p>
-
-                        <h3 className="mt-2 text-2xl font-black text-[#08213f]">
-                          Pontuação: {message.score}
-                        </h3>
-
-                        <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">
-                          {message.text}
-                        </p>
-
-                        <p className="mt-3 text-right text-[11px] font-bold text-slate-400">
-                          {message.time}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={message.id} className="flex justify-start">
-                    <div className="max-w-[78%] rounded-3xl rounded-bl-md bg-white px-5 py-4 shadow-sm ring-1 ring-slate-100">
-                      <p className="mb-1 text-xs font-black text-blue-700">
-                        {scenarioDetails?.customer_name ?? "Cliente"}
-                      </p>
-                      <p className="text-sm font-semibold leading-6 text-slate-700">
-                        {message.text}
-                      </p>
-                      <p className="mt-2 text-right text-[11px] font-bold text-slate-400">
-                        {message.time}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {isCustomerTyping && (
-                <div className="flex justify-start">
-                  <div className="rounded-3xl rounded-bl-md bg-white px-5 py-4 shadow-sm ring-1 ring-slate-100">
-                    <TypingDots />
-                  </div>
+            {isFinished && (
+              <div className="border-t border-slate-200 bg-white p-4">
+                <div className="rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-100">
+                  <p className="text-sm font-black text-emerald-900">
+                    Atendimento finalizado. Média: {averageScore}
+                  </p>
                 </div>
-              )}
+              </div>
+            )}
+          </main>
 
-              {isFeedbackTyping && (
-                <div className="flex justify-center">
-                  <div className="rounded-full bg-white px-5 py-3 shadow-sm ring-1 ring-slate-200">
-                    <TypingDots />
-                  </div>
-                </div>
-              )}
-
-              <div ref={bottomRef} />
+          <aside className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                Respostas rápidas
+              </p>
+              <h3 className="mt-1 text-base font-black text-[#08213f]">
+                Decisão da equipe
+              </h3>
             </div>
 
-            <div className="border-t border-slate-200 bg-white/90 p-5 backdrop-blur">
-              {!scenarioDetails ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
-                  Nenhum cenário disponível.
-                </div>
-              ) : selectedOption ? (
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <p className="text-sm font-bold text-slate-600">
-                    Rodada finalizada. A equipe pode tentar novamente ou escolher outro cenário.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={restartScenario}
-                    className="rounded-full bg-[#08213f] px-5 py-3 text-sm font-black text-white transition hover:bg-blue-800"
-                  >
-                    Nova tentativa
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
-                    Respostas rápidas da equipe
-                  </p>
-
-                  <div className="grid gap-3">
-                    {scenarioDetails.options.map((option, index) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => handleChooseOption(option)}
-                        disabled={isSaving}
-                        className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#08213f] text-xs font-black text-white">
+            <div className="max-h-[500px] overflow-y-auto p-4">
+              {!isFinished && currentStep ? (
+                <div className="space-y-3">
+                  {currentStep.options.map((option, index) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleSelectOption(option.id)}
+                      disabled={isSaving}
+                      className="group w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <div className="flex gap-3">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-black text-slate-600 group-hover:bg-blue-600 group-hover:text-white">
                           {index + 1}
                         </span>
 
-                        <span className="text-sm font-bold leading-6 text-slate-700 group-hover:text-[#08213f]">
+                        <span className="text-sm font-semibold leading-6 text-slate-700">
                           {option.option_text}
                         </span>
-                      </button>
-                    ))}
-                  </div>
-                </>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-slate-50 p-5 text-center">
+                  <p className="text-sm font-bold leading-6 text-slate-600">
+                    A prática foi concluída. Use “Trocar” para escolher outro cenário.
+                  </p>
+                </div>
               )}
             </div>
-          </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+                  <p className="text-[11px] font-black uppercase text-slate-400">
+                    Média
+                  </p>
+                  <p className="mt-1 text-xl font-black text-[#08213f]">
+                    {averageScore}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+                  <p className="text-[11px] font-black uppercase text-slate-400">
+                    Etapa
+                  </p>
+                  <p className="mt-1 text-xl font-black text-[#08213f]">
+                    {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </aside>
         </section>
-      </main>
+      )}
     </section>
   );
 }

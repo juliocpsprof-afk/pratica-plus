@@ -1,33 +1,36 @@
 ﻿import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
-import { ProfessorDashboard } from "@/components/professor/ProfessorDashboard";
+import { ProfessorDashboardOverview } from "@/components/professor/ProfessorDashboardOverview";
 
 export default function ProfessorDashboardPage() {
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="app-container">
         <DashboardTopbar area="professor" />
 
-        <header className="mb-6 rounded-[1.75rem] bg-[#08213f] p-8 text-white">
-          <Link href="/professor" className="text-sm font-black text-[#f7c600] hover:underline">
-            ← Painel do professor
+        <header className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <Link
+            href="/professor"
+            className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
+          >
+            ← Voltar ao painel
           </Link>
 
-          <p className="mt-7 text-sm font-black uppercase tracking-[0.18em] text-blue-200">
-            Dashboard
+          <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+            Acompanhamento
           </p>
 
-          <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
-            Visão geral do desempenho
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-[#08213f] md:text-3xl">
+            Dashboard do professor
           </h1>
 
-          <p className="mt-4 max-w-3xl text-blue-100">
-            Acompanhe alunos, cenários e resultados das simulações.
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Veja os principais indicadores do sistema, atividades realizadas e desempenho geral dos alunos.
           </p>
         </header>
 
-        <ProfessorDashboard />
+        <ProfessorDashboardOverview />
       </div>
     </AppShell>
   );

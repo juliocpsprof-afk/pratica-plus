@@ -39,6 +39,82 @@ function StatCard({
   );
 }
 
+function ExportButton({
+  children,
+  onClick,
+  disabled = false,
+}: {
+  children: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function getTodayFileDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Data não informada";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const text = String(value ?? "").replace(/"/g, '""');
+  return `"${text}"`;
+}
+
+function htmlCell(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function downloadFile(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function buildRankingRows(rows: RankingRow[]) {
+  return rows.map((row, index) => ({
+    Posicao: index + 1,
+    Aluno: row.full_name,
+    Usuario: row.username,
+    Turma: row.class_name,
+    Praticas: row.simulations_count,
+    Media: row.average_score,
+    MelhorNota: row.best_score,
+    PontuacaoTotal: row.total_score,
+    UltimaSimulacao: formatDate(row.last_simulation_at),
+  }));
+}
+
 export function RankingManager() {
   const [ranking, setRanking] = useState<RankingRow[]>([]);
   const [search, setSearch] = useState("");
@@ -80,17 +156,93 @@ export function RankingManager() {
     loadRanking();
   }, []);
 
+  function exportCsv() {
+    const exportRows = buildRankingRows(filteredRanking);
+    const headers = [
+      "Posicao",
+      "Aluno",
+      "Usuario",
+      "Turma",
+      "Praticas",
+      "Media",
+      "MelhorNota",
+      "PontuacaoTotal",
+      "UltimaSimulacao",
+    ];
+
+    const csv = [
+      headers.map(csvCell).join(";"),
+      ...exportRows.map((row) =>
+        headers
+          .map((header) => csvCell(row[header as keyof typeof row]))
+          .join(";")
+      ),
+    ].join("\n");
+
+    downloadFile(
+      `\uFEFF${csv}`,
+      `ranking-pratica-plus-${getTodayFileDate()}.csv`,
+      "text/csv;charset=utf-8"
+    );
+  }
+
+  function exportExcel() {
+    const exportRows = buildRankingRows(filteredRanking);
+    const headers = [
+      "Posicao",
+      "Aluno",
+      "Usuario",
+      "Turma",
+      "Praticas",
+      "Media",
+      "MelhorNota",
+      "PontuacaoTotal",
+      "UltimaSimulacao",
+    ];
+
+    const tableRows = exportRows
+      .map(
+        (row) =>
+          `<tr>${headers
+            .map((header) => `<td>${htmlCell(row[header as keyof typeof row])}</td>`)
+            .join("")}</tr>`
+      )
+      .join("");
+
+    const html = `
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body>
+          <table border="1">
+            <thead>
+              <tr>${headers.map((header) => `<th>${htmlCell(header)}</th>`).join("")}</tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    downloadFile(
+      html,
+      `ranking-pratica-plus-${getTodayFileDate()}.xls`,
+      "application/vnd.ms-excel;charset=utf-8"
+    );
+  }
+
   return (
     <section className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-5 py-4 md:px-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">Desempenho</p>
               <h2 className="mt-1 text-xl font-black tracking-tight text-[#08213f]">Ranking dos alunos</h2>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 lg:flex-row">
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -105,6 +257,20 @@ export function RankingManager() {
               >
                 Atualizar
               </button>
+
+              <ExportButton
+                onClick={exportCsv}
+                disabled={filteredRanking.length === 0}
+              >
+                Exportar CSV
+              </ExportButton>
+
+              <ExportButton
+                onClick={exportExcel}
+                disabled={filteredRanking.length === 0}
+              >
+                Exportar Excel
+              </ExportButton>
             </div>
           </div>
         </div>

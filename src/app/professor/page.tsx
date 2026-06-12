@@ -1,132 +1,77 @@
-﻿import { DashboardHeader } from "@/components/layout/DashboardHeader";
+﻿import { AppShell } from "@/components/layout/AppShell";
 import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
-import { AppShell } from "@/components/layout/AppShell";
-import { AdminModuleCard } from "@/components/ui/AdminModuleCard";
-import { PortalStat } from "@/components/ui/PortalStat";
+import { ProfessorHomePanel } from "@/components/professor/ProfessorHomePanel";
 
-const modules = [
-  {
-    icon: "🎓",
-    title: "Cursos",
-    description: "Organize os cursos usados nas turmas e simulações.",
-    href: "/professor/cursos",
-  },
-  {
-    icon: "🏫",
-    title: "Turmas",
-    description: "Crie turmas por curso, turno e período.",
-    href: "/professor/turmas",
-  },
-  {
-    icon: "👥",
-    title: "Alunos",
-    description: "Cadastre alunos e configure modo livre ou trilha.",
-    href: "/professor/alunos",
-  },
-  {
-    icon: "📥",
-    title: "Importação",
-    description: "Importe listas por CSV ou Excel com senha automática.",
-    href: "/professor/importacao",
-  },
-  {
-    icon: "✅",
-    title: "Presença",
-    description: "Marque presença antes das práticas em equipe.",
-    href: "/professor/presenca",
-  },
-  {
-    icon: "🧑‍🤝‍🧑",
-    title: "Equipes",
-    description: "Monte equipes manuais ou sorteadas.",
-    href: "/professor/equipes",
-  },
-  {
-    icon: "🧩",
-    title: "Cenários",
-    description: "Cadastre situações oficiais e personalizadas.",
-    href: "/professor/cenarios",
-  },
-  {
-    icon: "📊",
-    title: "Dashboard",
-    description: "Acompanhe resultados gerais das simulações.",
-    href: "/professor/dashboard",
-  },
-  {
-    icon: "📑",
-    title: "Relatórios",
-    description: "Consulte desempenho por turma.",
-    href: "/professor/relatorios",
-  },
-  {
-    icon: "🏆",
-    title: "Ranking",
-    description: "Veja a classificação geral dos alunos.",
-    href: "/professor/ranking",
-  },
-];
-
-export default function ProfessorPage() {
+export default function ProfessorHomePage() {
   return (
     <AppShell>
       <div className="app-container">
         <DashboardTopbar area="professor" />
 
-        <DashboardHeader
-          area="Professor"
-          title="Painel de gestão"
-          description="Gerencie alunos, turmas, cenários, trilhas, simulações e desempenho em uma visão organizada."
-        />
-
-        <section className="mt-6 grid gap-4 md:grid-cols-4">
-          <PortalStat
-            value="--"
-            label="Alunos"
-            helper="Total cadastrado"
-          />
-          <PortalStat
-            value="--"
-            label="Turmas"
-            helper="Turmas ativas"
-          />
-          <PortalStat
-            value="--"
-            label="Cenários"
-            helper="Simulações disponíveis"
-          />
-          <PortalStat
-            value="--"
-            label="Média"
-            helper="Desempenho geral"
-          />
-        </section>
-
-        <section className="mt-8 rounded-[28px] border border-slate-200 bg-white/80 p-5 shadow-sm md:p-6">
-          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="app-eyebrow">Gestão</p>
-              <h2 className="app-title mt-2 text-2xl md:text-3xl">
-                Módulos do professor
-              </h2>
-              <p className="app-subtitle mt-2 text-sm">
-                Acesse as áreas principais do sistema.
+        <header className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="p-6 md:p-8">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">
+                Painel do professor
               </p>
+
+              <h1 className="mt-3 max-w-3xl text-3xl font-black tracking-tight text-[#08213f] md:text-4xl">
+                Gerencie suas práticas, alunos e resultados em um só lugar.
+              </h1>
+
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600 md:text-base">
+                Configure cursos, turmas, alunos, presença, equipes, cenários e acompanhe o desempenho das simulações do Prática+.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <a
+                  href="/professor/alunos"
+                  className="inline-flex items-center justify-center rounded-xl bg-[#08213f] px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800"
+                >
+                  Gerenciar alunos
+                </a>
+
+                <a
+                  href="/professor/cenarios"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  Ver cenários
+                </a>
+              </div>
+            </div>
+
+            <div className="bg-[#08213f] p-6 text-white md:p-8">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">
+                Fluxo recomendado
+              </p>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
+                  <p className="text-sm font-black">1. Configure a base</p>
+                  <p className="mt-1 text-sm leading-6 text-blue-100">
+                    Cursos, turmas e alunos.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
+                  <p className="text-sm font-black">2. Prepare a aula</p>
+                  <p className="mt-1 text-sm leading-6 text-blue-100">
+                    Presença, equipes e cenários.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
+                  <p className="text-sm font-black">3. Acompanhe resultados</p>
+                  <p className="mt-1 text-sm leading-6 text-blue-100">
+                    Dashboard, relatórios e ranking.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
+        </header>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {modules.map((module) => (
-              <AdminModuleCard
-                key={module.title}
-                icon={module.icon}
-                title={module.title}
-                description={module.description}
-                href={module.href}
-              />
-            ))}
-          </div>
-        </section>
+        <ProfessorHomePanel />
       </div>
     </AppShell>
   );

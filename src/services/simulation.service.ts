@@ -378,3 +378,124 @@ export async function advanceStudentTrailIfNeeded(
 
   return true;
 }
+
+export type StudentTeam = {
+  id: string;
+  name: string;
+  class_id: string | null;
+  class_name: string;
+  role: string | null;
+};
+
+export type StudentSimulationHistoryRow = {
+  id: string;
+  scenario_id: string | null;
+  team_id: string | null;
+  module_slug: string | null;
+  mode: string;
+  total_score: number;
+  created_at: string | null;
+  scenario_title: string;
+  scenario_difficulty: string;
+  module_name: string;
+  team_name: string | null;
+};
+
+function oneSimulationRelation<T>(value: T | T[] | null | undefined): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+export async function getStudentTeams(
+  studentId: string
+): Promise<StudentTeam[]> {
+  const { data, error } = await supabase
+    .from("team_members")
+    .select(`
+      id,
+      role,
+      teams (
+        id,
+        name,
+        class_id,
+        classes (
+          name
+        )
+      )
+    `)
+    .eq("student_id", studentId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as any[];
+
+  return rows
+    .map((row) => {
+      const team = oneSimulationRelation(row.teams);
+      const classData = oneSimulationRelation(team?.classes);
+
+      return {
+        id: team?.id ?? "",
+        name: team?.name ?? "Equipe sem nome",
+        class_id: team?.class_id ?? null,
+        class_name: classData?.name ?? "Turma não informada",
+        role: row.role ?? null,
+      };
+    })
+    .filter((team) => Boolean(team.id));
+}
+
+export async function getStudentSimulationHistory(
+  studentId: string
+): Promise<StudentSimulationHistoryRow[]> {
+  const { data, error } = await supabase
+    .from("simulation_sessions")
+    .select(`
+      id,
+      scenario_id,
+      team_id,
+      module_slug,
+      mode,
+      total_score,
+      created_at,
+      scenarios (
+        title,
+        difficulty,
+        modules (
+          name
+        )
+      ),
+      teams (
+        name
+      )
+    `)
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as any[];
+
+  return rows.map((row) => {
+    const scenario = oneSimulationRelation(row.scenarios);
+    const moduleData = oneSimulationRelation(scenario?.modules);
+    const team = oneSimulationRelation(row.teams);
+
+    return {
+      id: row.id,
+      scenario_id: row.scenario_id,
+      team_id: row.team_id,
+      module_slug: row.module_slug,
+      mode: row.mode ?? "individual",
+      total_score: Number(row.total_score ?? 0),
+      created_at: row.created_at ?? null,
+      scenario_title: scenario?.title ?? "Cenário não informado",
+      scenario_difficulty: scenario?.difficulty ?? "não informado",
+      module_name: moduleData?.name ?? row.module_slug ?? "Módulo não informado",
+      team_name: team?.name ?? null,
+    };
+  });
+}

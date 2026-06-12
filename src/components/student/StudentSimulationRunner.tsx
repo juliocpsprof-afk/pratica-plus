@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSession } from "@/lib/session/session.client";
 import { getTechnicalFeedback } from "@/lib/feedback/technicalFeedback";
 import {
@@ -34,13 +34,19 @@ function difficultyLabel(value: string) {
   return value;
 }
 
-function difficultyTone(value: string) {
+function difficultyClass(value: string) {
   if (value === "facil") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
   if (value === "medio") return "bg-amber-50 text-amber-700 ring-amber-100";
   return "bg-red-50 text-red-700 ring-red-100";
 }
 
-function Badge({ children, className = "" }: { children: string; className?: string }) {
+function Badge({
+  children,
+  className = "",
+}: {
+  children: string;
+  className?: string;
+}) {
   return (
     <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${className}`}>
       {children}
@@ -48,10 +54,68 @@ function Badge({ children, className = "" }: { children: string; className?: str
   );
 }
 
+function MessageBubble({
+  message,
+  customerName,
+}: {
+  message: ChatMessage;
+  customerName: string;
+}) {
+  if (message.author === "sistema") {
+    return (
+      <div className="mx-auto max-w-[88%] rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-blue-950">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-blue-700">
+            Feedback técnico
+          </p>
+
+          {typeof message.score === "number" && (
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-blue-700 ring-1 ring-blue-100">
+              {message.score} pts
+            </span>
+          )}
+        </div>
+
+        <p className="whitespace-pre-line text-sm leading-6">
+          {message.text}
+        </p>
+      </div>
+    );
+  }
+
+  const isStudent = message.author === "aluno";
+
+  return (
+    <div className={`flex ${isStudent ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[78%] ${isStudent ? "text-right" : "text-left"}`}>
+        <p className={`mb-1 px-1 text-[11px] font-black uppercase tracking-[0.1em] ${
+          isStudent ? "text-blue-700" : "text-slate-500"
+        }`}>
+          {isStudent ? "Aluno" : customerName}
+        </p>
+
+        <div
+          className={`rounded-2xl px-4 py-3 shadow-sm ${
+            isStudent
+              ? "rounded-br-md bg-[#08213f] text-white"
+              : "rounded-bl-md border border-slate-200 bg-white text-slate-800"
+          }`}
+        >
+          <p className="whitespace-pre-line text-sm leading-6">
+            {message.text}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function StudentSimulationRunner({
   moduleSlug,
   moduleTitle,
 }: StudentSimulationRunnerProps) {
+  const chatBoxRef = useRef<HTMLDivElement | null>(null);
+
   const [student, setStudent] = useState<StudentByProfile | null>(null);
   const [scenarios, setScenarios] = useState<SimulationScenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState("");
@@ -75,6 +139,22 @@ export function StudentSimulationRunner({
     if (answers.length === 0) return 0;
     return Math.round(totalScore / answers.length);
   }, [answers.length, totalScore]);
+
+  function scrollChatToBottom() {
+    const box = chatBoxRef.current;
+
+    if (!box) {
+      return;
+    }
+
+    box.scrollTop = box.scrollHeight;
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(scrollChatToBottom, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [messages, isFinished]);
 
   async function loadStudentAndScenarios(filter = difficultyFilter) {
     try {
@@ -177,11 +257,13 @@ export function StudentSimulationRunner({
   }
 
   async function handleSelectOption(optionId: string) {
-    if (!scenarioDetails || !currentStep || !student || isSaving) {
+    if (!scenarioDetails || !currentStep || !student || isSaving || isFinished) {
       return;
     }
 
-    const selectedOption = currentStep.options.find((option) => option.id === optionId);
+    const selectedOption = currentStep.options.find(
+      (option) => option.id === optionId
+    );
 
     if (!selectedOption) {
       return;
@@ -234,7 +316,7 @@ export function StudentSimulationRunner({
 
       setCurrentStepIndex(nextStepIndex);
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         setMessages((currentMessages) => [
           ...currentMessages,
           {
@@ -290,11 +372,13 @@ export function StudentSimulationRunner({
     setTrailAdvanced(false);
   }
 
+  const customerName = scenarioDetails?.customer_name || "Cliente";
+
   return (
-    <section className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-5 py-4 md:px-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <section className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
                 Simulador individual
@@ -312,7 +396,7 @@ export function StudentSimulationRunner({
 
                 {student.simulation_access_mode === "trilha" && (
                   <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-100">
-                    Nível liberado {student.trail_unlocked_level}
+                    Nível {student.trail_unlocked_level}
                   </Badge>
                 )}
               </div>
@@ -320,9 +404,9 @@ export function StudentSimulationRunner({
           </div>
         </div>
 
-        <div className="p-5 md:p-6">
+        <div className="p-5">
           {error && (
-            <div className="mb-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+            <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               {error}
             </div>
           )}
@@ -332,7 +416,7 @@ export function StudentSimulationRunner({
               Carregando simulações...
             </div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_220px]">
+            <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_180px]">
               {student?.simulation_access_mode === "livre" ? (
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-bold text-slate-600">
@@ -341,10 +425,10 @@ export function StudentSimulationRunner({
                   <select
                     value={difficultyFilter}
                     onChange={(event) => handleDifficultyChange(event.target.value)}
-                    className="app-input"
+                    className="app-input px-4 py-2.5 text-sm"
                     disabled={Boolean(scenarioDetails)}
                   >
-                    <option value="todos">Todas liberadas</option>
+                    <option value="todos">Todas</option>
                     {(student.free_allowed_difficulties ?? []).map((difficulty) => (
                       <option key={difficulty} value={difficulty}>
                         {difficultyLabel(difficulty)}
@@ -358,7 +442,7 @@ export function StudentSimulationRunner({
                     Trilha
                   </p>
                   <p className="mt-1 text-sm font-black text-emerald-900">
-                    Nível {student?.trail_unlocked_level ?? 1} liberado
+                    Nível {student?.trail_unlocked_level ?? 1}
                   </p>
                 </div>
               )}
@@ -370,7 +454,7 @@ export function StudentSimulationRunner({
                 <select
                   value={selectedScenarioId}
                   onChange={(event) => setSelectedScenarioId(event.target.value)}
-                  className="app-input"
+                  className="app-input px-4 py-2.5 text-sm"
                   disabled={Boolean(scenarioDetails)}
                 >
                   {scenarios.length === 0 ? (
@@ -385,23 +469,23 @@ export function StudentSimulationRunner({
                 </select>
               </label>
 
-              <div className="flex items-end gap-3">
+              <div className="flex items-end">
                 {!scenarioDetails ? (
                   <button
                     type="button"
                     onClick={startScenario}
                     disabled={isStarting || scenarios.length === 0}
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-[#08213f] px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-[#08213f] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isStarting ? "Iniciando..." : "Iniciar prática"}
+                    {isStarting ? "Iniciando..." : "Iniciar"}
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={restart}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-200"
                   >
-                    Escolher outro
+                    Trocar
                   </button>
                 )}
               </div>
@@ -411,115 +495,60 @@ export function StudentSimulationRunner({
       </section>
 
       {scenarioDetails && (
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <main className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4 md:px-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <h3 className="truncate text-lg font-black text-[#08213f]">
-                    {scenarioDetails.title}
-                  </h3>
-
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {scenarioDetails.description || "Prática profissional orientada."}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Badge className={difficultyTone(scenarioDetails.difficulty)}>
-                    {difficultyLabel(scenarioDetails.difficulty)}
-                  </Badge>
-
-                  <Badge className="bg-slate-100 text-slate-700 ring-slate-200">
-                    Etapa {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)} de {scenarioDetails.steps.length}
-                  </Badge>
-                </div>
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-[#08213f] px-5 py-3 text-white">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">
+                  {customerName}
+                </p>
+                <p className="truncate text-xs font-semibold text-blue-100">
+                  {scenarioDetails.customer_profile || scenarioDetails.title}
+                </p>
               </div>
-            </div>
 
-            <div className="h-[520px] overflow-y-auto bg-slate-50 p-5 md:p-6">
+              <div className="flex shrink-0 gap-2">
+                <span className={`rounded-full px-3 py-1 text-xs font-black ring-1 ${difficultyClass(scenarioDetails.difficulty)}`}>
+                  {difficultyLabel(scenarioDetails.difficulty)}
+                </span>
+
+                <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-black text-white ring-1 ring-white/20">
+                  {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)}/{scenarioDetails.steps.length}
+                </span>
+              </div>
+            </header>
+
+            <div
+              ref={chatBoxRef}
+              className="h-[430px] overflow-y-auto bg-slate-100 px-5 py-4"
+            >
               <div className="space-y-4">
                 {messages.map((message) => (
-                  <div
+                  <MessageBubble
                     key={message.id}
-                    className={`flex ${
-                      message.author === "aluno" ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-sm ${
-                        message.author === "cliente"
-                          ? "bg-white text-slate-800 ring-1 ring-slate-200"
-                          : message.author === "aluno"
-                            ? "bg-[#08213f] text-white"
-                            : "bg-blue-50 text-blue-950 ring-1 ring-blue-100"
-                      }`}
-                    >
-                      <p className="mb-1 text-[11px] font-black uppercase tracking-[0.1em] opacity-70">
-                        {message.author === "cliente"
-                          ? scenarioDetails.customer_name || "Cliente"
-                          : message.author === "aluno"
-                            ? "Sua resposta"
-                            : "Feedback técnico"}
-                      </p>
-
-                      <p className="whitespace-pre-line text-sm leading-6">
-                        {message.text}
-                      </p>
-
-                      {typeof message.score === "number" && (
-                        <p className="mt-2 text-xs font-black">
-                          Pontuação da resposta: {message.score}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                    message={message}
+                    customerName={customerName}
+                  />
                 ))}
+
+                {isSaving && (
+                  <div className="mx-auto w-fit rounded-full bg-white px-4 py-2 text-xs font-black text-slate-500 shadow-sm ring-1 ring-slate-200">
+                    Salvando...
+                  </div>
+                )}
               </div>
             </div>
 
-            {!isFinished && currentStep && (
-              <div className="border-t border-slate-200 bg-white p-5 md:p-6">
-                <p className="mb-4 text-sm font-black text-[#08213f]">
-                  Escolha sua resposta:
-                </p>
-
-                <div className="grid gap-3">
-                  {currentStep.options.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => handleSelectOption(option.id)}
-                      disabled={isSaving}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 text-left text-sm font-semibold leading-6 text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {option.option_text}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {isFinished && (
-              <div className="border-t border-slate-200 bg-white p-5 md:p-6">
-                <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-100">
-                  <p className="text-lg font-black text-emerald-900">
-                    Simulação finalizada
-                  </p>
-
-                  <p className="mt-2 text-sm leading-6 text-emerald-800">
-                    Sua média foi <strong>{averageScore}</strong> pontos.
+              <div className="border-t border-slate-200 bg-white p-4">
+                <div className="rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-100">
+                  <p className="text-sm font-black text-emerald-900">
+                    Atendimento finalizado. Média: {averageScore}
                   </p>
 
                   {trailAdvanced && (
-                    <p className="mt-2 text-sm font-bold text-emerald-800">
-                      Parabéns. Você liberou o próximo nível da trilha.
-                    </p>
-                  )}
-
-                  {!trailAdvanced && student?.simulation_access_mode === "trilha" && (
-                    <p className="mt-2 text-sm font-bold text-emerald-800">
-                      Continue praticando para avançar na trilha.
+                    <p className="mt-1 text-sm font-bold text-emerald-800">
+                      Próximo nível liberado.
                     </p>
                   )}
                 </div>
@@ -527,62 +556,69 @@ export function StudentSimulationRunner({
             )}
           </main>
 
-          <aside className="space-y-4">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <aside className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">
-                Resumo técnico
+                Respostas rápidas
               </p>
+              <h3 className="mt-1 text-base font-black text-[#08213f]">
+                Escolha a próxima fala
+              </h3>
+            </div>
 
-              <div className="mt-4 space-y-3">
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
-                    Cliente
-                  </p>
-                  <p className="mt-1 text-sm font-black text-[#08213f]">
-                    {scenarioDetails.customer_name || "Não informado"}
+            <div className="max-h-[500px] overflow-y-auto p-4">
+              {!isFinished && currentStep ? (
+                <div className="space-y-3">
+                  {currentStep.options.map((option, index) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleSelectOption(option.id)}
+                      disabled={isSaving}
+                      className="group w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <div className="flex gap-3">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-black text-slate-600 group-hover:bg-blue-600 group-hover:text-white">
+                          {index + 1}
+                        </span>
+
+                        <span className="text-sm font-semibold leading-6 text-slate-700">
+                          {option.option_text}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-slate-50 p-5 text-center">
+                  <p className="text-sm font-bold leading-6 text-slate-600">
+                    A prática foi concluída. Use “Trocar” para escolher outro cenário.
                   </p>
                 </div>
+              )}
+            </div>
 
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
-                    Perfil
+            <div className="border-t border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+                  <p className="text-[11px] font-black uppercase text-slate-400">
+                    Média
                   </p>
-                  <p className="mt-1 text-sm font-black leading-5 text-[#08213f]">
-                    {scenarioDetails.customer_profile || "Não informado"}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
-                    Foco técnico
-                  </p>
-                  <p className="mt-1 text-sm font-black leading-5 text-[#08213f]">
-                    {scenarioDetails.technical_focus || "Atendimento profissional"}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
-                    Média atual
-                  </p>
-                  <p className="mt-1 text-2xl font-black text-[#08213f]">
+                  <p className="mt-1 text-xl font-black text-[#08213f]">
                     {averageScore}
                   </p>
                 </div>
+
+                <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+                  <p className="text-[11px] font-black uppercase text-slate-400">
+                    Etapa
+                  </p>
+                  <p className="mt-1 text-xl font-black text-[#08213f]">
+                    {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)}
+                  </p>
+                </div>
               </div>
-            </section>
-
-            {student?.pedagogical_notes && (
-              <section className="rounded-3xl border border-amber-100 bg-amber-50 p-5 shadow-sm">
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-700">
-                  Orientação do professor
-                </p>
-
-                <p className="mt-3 text-sm font-semibold leading-6 text-amber-950">
-                  {student.pedagogical_notes}
-                </p>
-              </section>
-            )}
+            </div>
           </aside>
         </section>
       )}

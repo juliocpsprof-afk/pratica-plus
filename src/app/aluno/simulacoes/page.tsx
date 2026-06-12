@@ -1,7 +1,7 @@
 ﻿import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { DashboardTopbar } from "@/components/layout/DashboardTopbar";
-import { CourseCard } from "@/components/ui/CourseCard";
+import { StudentSimulationsMenu } from "@/components/student/StudentSimulationsMenu";
 
 export default function StudentSimulationsPage() {
   return (
@@ -9,50 +9,28 @@ export default function StudentSimulationsPage() {
       <div className="app-container">
         <DashboardTopbar area="aluno" />
 
-        <header className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+        <header className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <Link
             href="/aluno"
-            className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
+            className="inline-flex rounded-full bg-blue-50 px-4 py-2 text-xs font-black text-blue-700 hover:bg-blue-100"
           >
-            ← Área do aluno
+            ← Voltar para área do aluno
           </Link>
 
-          <p className="app-eyebrow mt-8">Simuladores</p>
+          <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+            Simulações
+          </p>
 
-          <h1 className="app-title mt-3 max-w-3xl text-3xl md:text-5xl">
-            Escolha como deseja praticar.
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-[#08213f] md:text-3xl">
+            Escolha uma prática
           </h1>
 
-          <p className="app-subtitle mt-4 max-w-3xl text-sm md:text-base">
-            Treine individualmente ou em equipe com cenários cadastrados pelo professor.
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Selecione o tipo de simulação para começar seu treinamento profissional.
           </p>
         </header>
 
-        <section className="mt-6 grid gap-5 md:grid-cols-3">
-          <CourseCard
-            title="Telemarketing"
-            description="Atenda clientes, compreenda dúvidas e escolha a melhor resposta."
-            image="https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1000&q=80"
-            href="/aluno/simulacoes/telemarketing"
-            tag="Individual"
-          />
-
-          <CourseCard
-            title="Técnicas de Vendas"
-            description="Resolva objeções, negocie e conduza o cliente ao fechamento."
-            image="https://images.unsplash.com/photo-1573497491208-6b1acb260507?auto=format&fit=crop&w=1000&q=80"
-            href="/aluno/simulacoes/vendas"
-            tag="Individual"
-          />
-
-          <CourseCard
-            title="Simulação em Equipe"
-            description="Pratique em grupo, dividindo funções e tomando decisões em conjunto."
-            image="https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1000&q=80"
-            href="/aluno/simulacoes/equipe"
-            tag="Equipe"
-          />
-        </section>
+        <StudentSimulationsMenu />
       </div>
     </AppShell>
   );
