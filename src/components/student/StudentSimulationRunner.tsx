@@ -7,6 +7,7 @@ import {
   getSimulationScenarioDetails,
   getStudentByProfileId,
   saveSimulationResult,
+  SimulationAnswerInput,
   SimulationOption,
   SimulationScenario,
   SimulationScenarioDetails,
@@ -49,11 +50,11 @@ export function StudentSimulationRunner({
   const [scenarioDetails, setScenarioDetails] =
     useState<SimulationScenarioDetails | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [selectedOption, setSelectedOption] = useState<SimulationOption | null>(
-    null
-  );
+  const [answers, setAnswers] = useState<SimulationAnswerInput[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isCustomerTyping, setIsCustomerTyping] = useState(false);
   const [isFeedbackTyping, setIsFeedbackTyping] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +62,10 @@ export function StudentSimulationRunner({
 
   const moduleLabel =
     moduleSlug === "telemarketing" ? "Telemarketing" : "Técnicas de Vendas";
+
+  const currentStep = scenarioDetails?.steps[currentStepIndex] ?? null;
+
+  const totalScore = answers.reduce((sum, answer) => sum + answer.score, 0);
 
   const visual = useMemo(() => {
     if (moduleSlug === "telemarketing") {
@@ -120,19 +125,37 @@ export function StudentSimulationRunner({
     }
   }
 
+  async function sendCustomerMessage(text: string) {
+    setIsCustomerTyping(true);
+    await wait(900 + Math.min(text.length * 12, 1400));
+    setIsCustomerTyping(false);
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        sender: "customer",
+        text,
+        time: getCurrentTime(),
+      },
+    ]);
+  }
+
   async function startChat(details: SimulationScenarioDetails | null) {
     setMessages([]);
-    setSelectedOption(null);
+    setAnswers([]);
+    setCurrentStepIndex(0);
+    setIsFinished(false);
     setSuccessMessage("");
 
-    if (!details) {
+    if (!details || details.steps.length === 0) {
       return;
     }
 
     const introMessage =
       moduleSlug === "telemarketing"
-        ? "Nova chamada recebida. Atenda o cliente com atenção e escolha a melhor resposta."
-        : "Novo atendimento comercial iniciado. Conduza a conversa com postura profissional.";
+        ? "Nova chamada recebida. Atenda o cliente até finalizar a conversa."
+        : "Novo atendimento comercial iniciado. Conduza a venda até o fechamento.";
 
     setMessages([
       {
@@ -144,27 +167,13 @@ export function StudentSimulationRunner({
     ]);
 
     await wait(700);
-    setIsCustomerTyping(true);
-
-    await wait(1200);
-    setIsCustomerTyping(false);
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        sender: "customer",
-        text: details.step?.customer_message ?? "Olá, preciso de ajuda.",
-        time: getCurrentTime(),
-      },
-    ]);
+    await sendCustomerMessage(details.steps[0].customer_message);
   }
 
   async function loadScenarioDetails(scenarioId: string) {
     try {
       setError("");
       setSuccessMessage("");
-      setSelectedOption(null);
 
       if (!scenarioId) {
         setScenarioDetails(null);
@@ -194,19 +203,34 @@ export function StudentSimulationRunner({
     }
   }, [selectedScenarioId]);
 
+  async function finishSimulation(finalAnswers: SimulationAnswerInput[]) {
+    if (!student || !scenarioDetails) {
+      return;
+    }
+
+    const finalScore = finalAnswers.reduce((sum, answer) => sum + answer.score, 0);
+
+    await saveSimulationResult({
+      scenarioId: scenarioDetails.id,
+      studentId: student.id,
+      classId: student.class_id,
+      mode: "individual",
+      moduleSlug,
+      answers: finalAnswers,
+      totalScore: finalScore,
+    });
+
+    setIsFinished(true);
+    setSuccessMessage("Simulação finalizada e salva no histórico.");
+  }
+
   async function handleChooseOption(option: SimulationOption) {
     try {
       setError("");
       setSuccessMessage("");
-      setSelectedOption(option);
 
-      if (!student) {
-        setError("Aluno não encontrado para esta sessão.");
-        return;
-      }
-
-      if (!scenarioDetails?.step) {
-        setError("O cenário não possui etapa válida.");
+      if (!currentStep) {
+        setError("Etapa atual não encontrada.");
         return;
       }
 
@@ -220,23 +244,21 @@ export function StudentSimulationRunner({
         },
       ]);
 
+      const nextAnswers = [
+        ...answers,
+        {
+          stepId: currentStep.id,
+          optionId: option.id,
+          score: option.score,
+        },
+      ];
+
+      setAnswers(nextAnswers);
       setIsSaving(true);
 
-      await saveSimulationResult({
-        scenarioId: scenarioDetails.id,
-        studentId: student.id,
-        classId: student.class_id,
-        mode: "individual",
-        stepId: scenarioDetails.step.id,
-        optionId: option.id,
-        score: option.score,
-        moduleSlug,
-      });
-
-      await wait(700);
+      await wait(500);
       setIsFeedbackTyping(true);
-
-      await wait(1100);
+      await wait(850);
       setIsFeedbackTyping(false);
 
       setMessages((current) => [
@@ -246,19 +268,29 @@ export function StudentSimulationRunner({
           sender: "feedback",
           text:
             option.feedback ??
-            "Resposta registrada. Continue treinando para melhorar sua condução.",
+            "Resposta registrada. Continue conduzindo a conversa.",
           time: getCurrentTime(),
           score: option.score,
           isBest: option.is_best_option,
         },
       ]);
 
-      setSuccessMessage("Simulação salva no histórico e nas competências.");
+      const nextStepIndex = currentStepIndex + 1;
+      const nextStep = scenarioDetails?.steps[nextStepIndex];
+
+      if (nextStep) {
+        await wait(900);
+        setCurrentStepIndex(nextStepIndex);
+        await sendCustomerMessage(nextStep.customer_message);
+      } else {
+        await wait(700);
+        await finishSimulation(nextAnswers);
+      }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Não foi possível salvar a simulação."
+          : "Não foi possível salvar a resposta."
       );
     } finally {
       setIsSaving(false);
@@ -279,11 +311,11 @@ export function StudentSimulationRunner({
         </p>
 
         <h2 className="mt-3 text-3xl font-black leading-tight text-[#08213f]">
-          Atendimento em formato de conversa.
+          Atendimento em chat real.
         </h2>
 
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          A interação agora aparece como um chat real, com cliente digitando e respostas em bolhas.
+          A conversa avança em etapas, com cliente digitando e respostas rápidas do aluno.
         </p>
 
         <div className="mt-6 space-y-5">
@@ -291,7 +323,6 @@ export function StudentSimulationRunner({
             <label className="mb-2 block text-sm font-black text-slate-700">
               Módulo
             </label>
-
             <div className="rounded-2xl bg-[#f4f8fc] px-5 py-4 text-sm font-black text-[#08213f]">
               {moduleLabel}
             </div>
@@ -325,9 +356,14 @@ export function StudentSimulationRunner({
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 {scenarioDetails.customer_profile ?? "Sem perfil informado."}
               </p>
-              <span className="mt-4 inline-flex rounded-full bg-white px-3 py-2 text-xs font-black text-blue-700">
-                Dificuldade: {scenarioDetails.difficulty}
-              </span>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <span className="rounded-2xl bg-white px-3 py-3 text-xs font-black text-blue-700">
+                  Etapa {Math.min(currentStepIndex + 1, scenarioDetails.steps.length)} de {scenarioDetails.steps.length}
+                </span>
+                <span className="rounded-2xl bg-white px-3 py-3 text-xs font-black text-emerald-700">
+                  Pontos: {totalScore}
+                </span>
+              </div>
             </div>
           )}
 
@@ -483,14 +519,16 @@ export function StudentSimulationRunner({
             </div>
 
             <div className="border-t border-slate-200 bg-white/90 p-5 backdrop-blur">
-              {!scenarioDetails ? (
+              {!currentStep ? (
                 <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
-                  Nenhum cenário disponível.
+                  {isFinished
+                    ? "Conversa finalizada. Você pode reiniciar ou escolher outro cenário."
+                    : "Nenhuma etapa disponível neste cenário."}
                 </div>
-              ) : selectedOption ? (
+              ) : isFinished ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <p className="text-sm font-bold text-slate-600">
-                    Atendimento finalizado. Você pode reiniciar ou escolher outro cenário.
+                    Atendimento finalizado. Pontuação total: {totalScore}
                   </p>
 
                   <button
@@ -508,12 +546,12 @@ export function StudentSimulationRunner({
                   </p>
 
                   <div className="grid gap-3">
-                    {scenarioDetails.options.map((option, index) => (
+                    {currentStep.options.map((option, index) => (
                       <button
                         key={option.id}
                         type="button"
                         onClick={() => handleChooseOption(option)}
-                        disabled={isSaving}
+                        disabled={isSaving || isCustomerTyping || isFeedbackTyping}
                         className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#08213f] text-xs font-black text-white">

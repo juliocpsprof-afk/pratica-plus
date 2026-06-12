@@ -22,14 +22,6 @@ export type SimulationScenario = {
   } | null;
 };
 
-export type SimulationStep = {
-  id: string;
-  scenario_id: string;
-  step_order: number;
-  customer_message: string;
-  context_note: string | null;
-};
-
 export type SimulationOption = {
   id: string;
   step_id: string;
@@ -39,9 +31,17 @@ export type SimulationOption = {
   feedback: string | null;
 };
 
-export type SimulationScenarioDetails = SimulationScenario & {
-  step: SimulationStep | null;
+export type SimulationStep = {
+  id: string;
+  scenario_id: string;
+  step_order: number;
+  customer_message: string;
+  context_note: string | null;
   options: SimulationOption[];
+};
+
+export type SimulationScenarioDetails = SimulationScenario & {
+  steps: SimulationStep[];
 };
 
 export type StudentTeam = {
@@ -51,16 +51,21 @@ export type StudentTeam = {
   role_name: string | null;
 };
 
+export type SimulationAnswerInput = {
+  stepId: string;
+  optionId: string;
+  score: number;
+};
+
 export type SaveSimulationResultInput = {
   scenarioId: string;
   studentId: string;
   classId: string | null;
   teamId?: string | null;
   mode: "individual" | "equipe";
-  stepId: string;
-  optionId: string;
-  score: number;
   moduleSlug: "telemarketing" | "vendas";
+  answers: SimulationAnswerInput[];
+  totalScore: number;
 };
 
 export type StudentSimulationHistoryRow = {
@@ -188,37 +193,43 @@ export async function getSimulationScenarioDetails(
     .from("scenario_steps")
     .select("id, scenario_id, step_order, customer_message, context_note")
     .eq("scenario_id", scenarioId)
-    .order("step_order", { ascending: true })
-    .limit(1);
+    .order("step_order", { ascending: true });
 
   if (stepsError) {
     throw new Error(stepsError.message);
   }
 
-  const step = (stepsData?.[0] ?? null) as SimulationStep | null;
+  const rawSteps = stepsData ?? [];
 
-  if (!step) {
+  if (rawSteps.length === 0) {
     return {
       ...(scenarioData as SimulationScenario),
-      step: null,
-      options: [],
+      steps: [],
     };
   }
+
+  const stepIds = rawSteps.map((step) => step.id);
 
   const { data: optionsData, error: optionsError } = await supabase
     .from("scenario_options")
     .select("id, step_id, option_text, is_best_option, score, feedback")
-    .eq("step_id", step.id)
-    .order("score", { ascending: false });
+    .in("step_id", stepIds)
+    .order("created_at", { ascending: true });
 
   if (optionsError) {
     throw new Error(optionsError.message);
   }
 
+  const options = (optionsData ?? []) as SimulationOption[];
+
+  const steps = rawSteps.map((step) => ({
+    ...step,
+    options: options.filter((option) => option.step_id === step.id),
+  }));
+
   return {
     ...(scenarioData as SimulationScenario),
-    step,
-    options: (optionsData ?? []) as SimulationOption[],
+    steps,
   };
 }
 
@@ -234,7 +245,7 @@ export async function saveSimulationResult(
       class_id: input.classId,
       mode: input.mode,
       status: "finalizada",
-      total_score: input.score,
+      total_score: input.totalScore,
       finished_at: new Date().toISOString(),
     })
     .select("id")
@@ -244,25 +255,34 @@ export async function saveSimulationResult(
     throw new Error(sessionError.message);
   }
 
-  const { error: answerError } = await supabase
-    .from("simulation_answers")
-    .insert({
-      session_id: sessionData.id,
-      step_id: input.stepId,
-      option_id: input.optionId,
-      student_id: input.studentId,
-      score: input.score,
-    });
+  const answerRows = input.answers.map((answer) => ({
+    session_id: sessionData.id,
+    step_id: answer.stepId,
+    option_id: answer.optionId,
+    student_id: input.studentId,
+    score: answer.score,
+  }));
 
-  if (answerError) {
-    throw new Error(answerError.message);
+  if (answerRows.length > 0) {
+    const { error: answerError } = await supabase
+      .from("simulation_answers")
+      .insert(answerRows);
+
+    if (answerError) {
+      throw new Error(answerError.message);
+    }
   }
+
+  const averageScore =
+    input.answers.length === 0
+      ? input.totalScore
+      : Math.round(input.totalScore / input.answers.length);
 
   await saveCompetencyScores({
     studentId: input.studentId,
     simulationSessionId: sessionData.id,
     moduleSlug: input.moduleSlug,
-    baseScore: input.score,
+    baseScore: averageScore,
   });
 
   return sessionData.id;
