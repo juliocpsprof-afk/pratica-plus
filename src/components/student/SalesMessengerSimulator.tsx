@@ -312,6 +312,23 @@ export function SalesMessengerSimulator({
   );
 
   const sequenceTokenRef = useRef(0);
+
+  /*
+   * Cenário imediatamente disponível para o motor,
+   * sem aguardar a atualização visual do React.
+   */
+  const scenarioRef =
+    useRef<SalesRichScenarioDetails | null>(null);
+  /*
+   * Impede mensagens duplicadas e registra quais etapas
+   * já foram entregues ao aluno.
+   */
+  const deliveredStepsRef =
+    useRef<Set<string>>(new Set());
+
+  const runningStepRef =
+    useRef<string | null>(null);
+
   const answersRef =
     useRef<SimulationAnswerInput[]>([]);
   const scoreRef = useRef(0);
@@ -533,6 +550,53 @@ export function SalesMessengerSimulator({
     return () => window.clearTimeout(timer);
   }, [messages, customerTyping]);
 
+  /*
+   * MONITOR AUTOMATICO DA CONVERSA
+   *
+   * Caso a tela esteja ativa, mas nenhuma rotina esteja
+   * enviando a etapa atual, o monitor inicia a entrega.
+   */
+  useEffect(() => {
+    if (
+      phase !== "active" ||
+      !scenario ||
+      customerTyping ||
+      responsesAvailable
+    ) {
+      return;
+    }
+
+    const step =
+      scenario.steps[currentStepIndex];
+
+    if (
+      !step ||
+      deliveredStepsRef.current.has(
+        step.id
+      ) ||
+      runningStepRef.current === step.id
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void playCustomerMessages(
+        currentStepIndex,
+        scenario
+      );
+    }, 600);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    phase,
+    scenario,
+    currentStepIndex,
+    customerTyping,
+    responsesAvailable,
+  ]);
+
   async function handleDifficultyChange(
     value: string
   ) {
@@ -544,6 +608,9 @@ export function SalesMessengerSimulator({
 
   function resetConversation() {
     sequenceTokenRef.current += 1;
+    scenarioRef.current = null;
+    deliveredStepsRef.current = new Set();
+    runningStepRef.current = null;
 
     answersRef.current = [];
     scoreRef.current = 0;
@@ -565,56 +632,194 @@ export function SalesMessengerSimulator({
   }
 
   async function playCustomerMessages(
-    stepIndex: number
+    stepIndex: number,
+    activeScenario?: SalesRichScenarioDetails | null
   ) {
-    if (!scenario) {
+    const scenarioForSequence =
+      activeScenario ?? scenarioRef.current;
+
+    if (!scenarioForSequence) {
+      setCustomerTyping(false);
+      setResponsesAvailable(false);
+
+      setError(
+        "O cenário não ficou disponível para iniciar a conversa."
+      );
+
       return;
     }
 
-    const step = scenario.steps[stepIndex];
+    const step =
+      scenarioForSequence.steps[stepIndex];
 
     if (!step) {
+      setCustomerTyping(false);
+      setResponsesAvailable(false);
+
+      setError(
+        "A etapa atual da conversa não foi encontrada."
+      );
+
       return;
     }
+
+    /*
+     * Não executa a mesma etapa duas vezes.
+     */
+    if (
+      deliveredStepsRef.current.has(step.id)
+    ) {
+      setCustomerTyping(false);
+      setResponsesAvailable(
+        step.options.length > 0
+      );
+
+      return;
+    }
+
+    /*
+     * Evita duas rotinas simultâneas para a mesma etapa.
+     */
+    if (runningStepRef.current === step.id) {
+      return;
+    }
+
+    runningStepRef.current = step.id;
 
     const token = ++sequenceTokenRef.current;
 
+    setError("");
     setResponsesAvailable(false);
 
-    for (
-      let index = 0;
-      index < step.messages.length;
-      index += 1
-    ) {
-      const item = step.messages[index];
+    /*
+     * Fallback obrigatório.
+     * Mesmo que scenario_step_messages esteja vazio,
+     * customer_message será exibida no chat.
+     */
+    const sourceMessages =
+      step.messages &&
+      step.messages.length > 0
+        ? step.messages
+        : [
+            {
+              id: `fallback-${step.id}`,
+              step_id: step.id,
+              sender: "cliente",
+              message_type: "text" as const,
+              content:
+                step.customer_message ||
+                "Olá! Gostaria de receber mais informações.",
+              media_url: null,
+              media_name: null,
+              media_mime_type: null,
+              media_size_label: null,
+              caption: null,
+              emoji: null,
+              message_order: 1,
+              delay_ms: 900,
+              metadata: {},
+            },
+          ];
 
-      setCustomerTyping(true);
+    try {
+      for (
+        let index = 0;
+        index < sourceMessages.length;
+        index += 1
+      ) {
+        const item = sourceMessages[index];
 
-      await wait(
-        Math.max(
-          450,
-          Number(item.delay_ms ?? 1100)
-        )
-      );
+        const messageContent =
+          item.content ??
+          item.caption ??
+          item.emoji ??
+          item.media_name ??
+          "";
 
-      if (token !== sequenceTokenRef.current) {
-        return;
+        /*
+         * O tempo cresce conforme o tamanho do texto,
+         * dando impressão de uma pessoa digitando.
+         */
+        const naturalDelay = Math.min(
+          3400,
+          Math.max(
+            650,
+            Number(item.delay_ms ?? 900) +
+              messageContent.length * 9
+          )
+        );
+
+        setCustomerTyping(true);
+
+        await wait(naturalDelay);
+
+        if (
+          token !== sequenceTokenRef.current
+        ) {
+          setCustomerTyping(false);
+          return;
+        }
+
+        setCustomerTyping(false);
+
+        const normalizedMessage =
+          normalizeIncomingMessage(item);
+
+        setMessages((current) => {
+          const alreadyExists =
+            current.some(
+              (message) =>
+                message.id ===
+                normalizedMessage.id
+            );
+
+          if (alreadyExists) {
+            return current;
+          }
+
+          return [
+            ...current,
+            normalizedMessage,
+          ];
+        });
+
+        if (
+          index <
+          sourceMessages.length - 1
+        ) {
+          await wait(
+            randomBetween(400, 900)
+          );
+        }
       }
 
+      if (
+        token === sequenceTokenRef.current
+      ) {
+        deliveredStepsRef.current.add(
+          step.id
+        );
+
+        setCustomerTyping(false);
+        setResponsesAvailable(
+          step.options.length > 0
+        );
+      }
+    } catch (caughtError) {
       setCustomerTyping(false);
+      setResponsesAvailable(false);
 
-      setMessages((current) => [
-        ...current,
-        normalizeIncomingMessage(item),
-      ]);
-
-      if (index < step.messages.length - 1) {
-        await wait(randomBetween(280, 650));
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Não foi possível exibir as mensagens do cliente."
+      );
+    } finally {
+      if (
+        runningStepRef.current === step.id
+      ) {
+        runningStepRef.current = null;
       }
-    }
-
-    if (token === sequenceTokenRef.current) {
-      setResponsesAvailable(true);
     }
   }
 
@@ -650,12 +855,23 @@ export function SalesMessengerSimulator({
           scenarioId
         );
 
-      if (details.steps.length === 0) {
+      if (
+        !details.steps ||
+        details.steps.length === 0
+      ) {
         setError(
-          "Este cenário não possui etapas."
+          "Este cenário não possui etapas cadastradas."
         );
         return;
       }
+
+      sequenceTokenRef.current += 1;
+      scenarioRef.current = details;
+
+      deliveredStepsRef.current =
+        new Set();
+
+      runningStepRef.current = null;
 
       answersRef.current = [];
       scoreRef.current = 0;
@@ -675,19 +891,36 @@ export function SalesMessengerSimulator({
 
       setPhase("waiting");
 
-      await wait(randomBetween(900, 2600));
+      await wait(
+        randomBetween(700, 1500)
+      );
 
+      /*
+       * Primeiro exibe o ambiente de conversa.
+       */
       setPhase("active");
 
-      window.setTimeout(() => {
-        playCustomerMessages(0);
-      }, 200);
+      /*
+       * Aguarda uma fração de segundo para o painel
+       * ficar visível e inicia o cliente digitando.
+       */
+      await wait(250);
+
+      await playCustomerMessages(
+        0,
+        details
+      );
     } catch (caughtError) {
+      setCustomerTyping(false);
+      setResponsesAvailable(false);
+
       setError(
         caughtError instanceof Error
           ? caughtError.message
           : "Não foi possível iniciar a conversa."
       );
+
+      setPhase("setup");
     } finally {
       setIsPreparing(false);
     }
@@ -873,8 +1106,11 @@ export function SalesMessengerSimulator({
     setPhase("active");
 
     window.setTimeout(() => {
-      playCustomerMessages(nextIndex);
-    }, randomBetween(300, 750));
+      void playCustomerMessages(
+        nextIndex,
+        scenarioRef.current ?? scenario
+      );
+    }, randomBetween(350, 750));
   }
 
   function renderMessage(
@@ -2195,3 +2431,4 @@ export function SalesMessengerSimulator({
     </main>
   );
 }
+
