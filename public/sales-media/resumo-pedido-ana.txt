@@ -1,0 +1,14 @@
+﻿RESUMO DO PEDIDO
+
+Cliente: Ana Paula
+Produto: Kit Compacto para Loja
+Itens:
+- 3 módulos de prateleira
+- 1 balcão pequeno
+- Montagem
+- Entrega programada
+
+Prazo combinado:
+Antes da inauguração informada pela cliente.
+
+Documento fictício criado exclusivamente para treinamento.

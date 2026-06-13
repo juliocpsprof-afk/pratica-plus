@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSession } from "@/lib/session/session.client";
 import { getTechnicalFeedback } from "@/lib/feedback/technicalFeedback";
@@ -44,7 +45,7 @@ function Badge({
   children,
   className = "",
 }: {
-  children: string;
+  children: ReactNode;
   className?: string;
 }) {
   return (
@@ -186,7 +187,18 @@ export function StudentSimulationRunner({
       setScenarios(scenariosData);
 
       if (!selectedScenarioId && scenariosData[0]) {
-        setSelectedScenarioId(scenariosData[0].id);
+        const requestedScenarioId =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("scenario")
+            : null;
+
+        const requestedScenario = scenariosData.find(
+          (scenario) => scenario.id === requestedScenarioId
+        );
+
+        setSelectedScenarioId(
+          requestedScenario?.id ?? scenariosData[0].id
+        );
       }
     } catch (err) {
       setError(
@@ -341,6 +353,10 @@ export function StudentSimulationRunner({
         classId: student.class_id,
         moduleSlug,
         mode: "individual",
+        assignmentId:
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("assignment")
+            : null,
         totalScore: finalAverage,
         answers: nextAnswers,
       });
@@ -625,3 +641,5 @@ export function StudentSimulationRunner({
     </section>
   );
 }
+
+

@@ -16,7 +16,7 @@ function SimulationCard({
   return (
     <Link
       href={href}
-      className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+      className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-3xl transition group-hover:bg-blue-100">
@@ -45,30 +45,39 @@ function SimulationCard({
 
 export function StudentSimulationsMenu() {
   return (
-    <section className="grid gap-5 lg:grid-cols-3">
+    <section className="grid gap-5 md:grid-cols-2">
       <SimulationCard
         href="/aluno/simulacoes/telemarketing"
-        title="Telemarketing"
-        description="Treine atendimento telefônico, escuta ativa, triagem e abordagem profissional."
-        icon="☎️"
+        title="Central de Telemarketing"
+        description="Atenda chamadas, resolva problemas, negocie e receba a avaliação do cliente."
+        icon="🎧"
         label="Individual"
+      />
+
+      <SimulationCard
+        href="/aluno/simulacoes/equipe/telemarketing"
+        title="Central em Equipe"
+        description="Atenda clientes junto com sua célula e acompanhe o desempenho coletivo."
+        icon="☎️"
+        label="Equipe"
       />
 
       <SimulationCard
         href="/aluno/simulacoes/vendas"
         title="Técnicas de Vendas"
-        description="Pratique negociação, objeções, fechamento e postura consultiva."
-        icon="🛒"
+        description="Pratique negociação, objeções, argumentação e fechamento comercial."
+        icon="💬"
         label="Individual"
       />
 
       <SimulationCard
-        href="/aluno/simulacoes/equipe"
-        title="Simulação em Equipe"
-        description="Atue em grupo, tome decisões e desenvolva colaboração profissional."
+        href="/aluno/simulacoes/equipe/vendas"
+        title="Vendas em Equipe"
+        description="Participe das simulações colaborativas organizadas pelo professor."
         icon="🤝"
         label="Equipe"
       />
     </section>
   );
 }
+

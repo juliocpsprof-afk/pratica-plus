@@ -1,0 +1,42 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <defs>
+    <linearGradient id="store" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="1" stop-color="#fef3c7"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="960" height="640" rx="38" fill="url(#store)"/>
+  <rect y="475" width="960" height="165" fill="#d6d3d1"/>
+
+  <rect x="90" y="75" width="780" height="450" rx="30" fill="#ffffff" opacity=".96"/>
+
+  <rect x="145" y="140" width="285" height="325" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="7"/>
+  <rect x="175" y="190" width="225" height="18" rx="9" fill="#94a3b8"/>
+  <rect x="175" y="275" width="225" height="18" rx="9" fill="#94a3b8"/>
+  <rect x="175" y="360" width="225" height="18" rx="9" fill="#94a3b8"/>
+
+  <rect x="194" y="220" width="55" height="44" rx="8" fill="#60a5fa"/>
+  <rect x="272" y="220" width="55" height="44" rx="8" fill="#f59e0b"/>
+  <rect x="345" y="220" width="40" height="44" rx="8" fill="#10b981"/>
+
+  <rect x="194" y="305" width="72" height="44" rx="8" fill="#f472b6"/>
+  <rect x="288" y="305" width="45" height="44" rx="8" fill="#a78bfa"/>
+  <rect x="350" y="305" width="35" height="44" rx="8" fill="#fb7185"/>
+
+  <rect x="500" y="155" width="290" height="250" rx="20" fill="#1e293b"/>
+  <rect x="525" y="180" width="240" height="145" rx="10" fill="#f8fafc"/>
+
+  <text x="645" y="240" text-anchor="middle" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#ea580c">
+    NOVA LOJA
+  </text>
+
+  <rect x="565" y="350" width="160" height="38" rx="19" fill="#ea580c"/>
+  <text x="645" y="375" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">
+    Abertura em breve
+  </text>
+
+  <text x="480" y="570" text-anchor="middle" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#334155">
+    Espaço da loja enviado pela cliente
+  </text>
+</svg>

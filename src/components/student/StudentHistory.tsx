@@ -147,16 +147,16 @@ export function StudentHistory() {
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h3 className="text-xl font-black text-[#08213f]">
-                      {item.scenarios?.title ?? "Simulação"}
+                      {item.scenario_title ?? "Simulação"}
                     </h3>
 
                     <p className="mt-2 text-sm font-semibold text-slate-500">
-                      {item.scenarios?.modules?.name ?? "Módulo"} •{" "}
-                      {item.scenarios?.difficulty ?? "nível"}
+                      {item.module_name ?? "Módulo"} •{" "}
+                      {item.scenario_difficulty ?? "nível"}
                     </p>
 
                     <p className="mt-1 text-xs font-bold text-slate-400">
-                      {new Date(item.started_at).toLocaleString("pt-BR")}
+                      {item.created_at ? new Date(item.created_at).toLocaleString("pt-BR") : "Data não informada"}
                     </p>
                   </div>
 
@@ -177,3 +177,4 @@ export function StudentHistory() {
     </section>
   );
 }
+

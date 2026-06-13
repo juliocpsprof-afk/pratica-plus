@@ -170,7 +170,14 @@ export function StudentHomeOverview() {
         </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <ActionCard
+          href="/aluno/atividades"
+          title="Minhas atividades"
+          description="Veja práticas enviadas pelo professor, prazos e resultados."
+          icon="🗓️"
+        />
+
         <ActionCard
           href="/aluno/simulacoes"
           title="Praticar agora"
@@ -195,3 +202,4 @@ export function StudentHomeOverview() {
     </section>
   );
 }
+

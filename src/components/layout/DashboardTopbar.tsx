@@ -1,9 +1,9 @@
 ﻿"use client";
 
+import type { AppSession } from "@/lib/session/session.client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  AppSession,
   clearSession,
   getSession,
 } from "@/lib/session/session.client";
@@ -71,3 +71,4 @@ export function DashboardTopbar({ area }: DashboardTopbarProps) {
     </header>
   );
 }
+

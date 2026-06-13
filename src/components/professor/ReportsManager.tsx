@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { ClassRow, getClasses } from "@/services/classes.service";
 import {
@@ -31,7 +32,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green" | "amber" | "red";
 }) {
   const tones = {
@@ -54,7 +55,7 @@ function ExportButton({
   onClick,
   disabled = false,
 }: {
-  children: string;
+  children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
 }) {
@@ -485,3 +486,4 @@ export function ReportsManager() {
     </section>
   );
 }
+

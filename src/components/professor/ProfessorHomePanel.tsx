@@ -237,6 +237,14 @@ export function ProfessorHomePanel() {
           />
 
           <ModuleCard
+            href="/professor/atividades"
+            title="Atividades"
+            description="Envie práticas para turmas ou alunos e acompanhe as conclusões."
+            icon="🗓️"
+            tag="Planejamento"
+          />
+
+          <ModuleCard
             href="/professor/cenarios"
             title="Cenários"
             description="Crie e gerencie situações de Telemarketing e Vendas."
@@ -290,3 +298,4 @@ export function ProfessorHomePanel() {
     </section>
   );
 }
+

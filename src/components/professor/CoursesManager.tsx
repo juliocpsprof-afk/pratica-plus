@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CourseRow,
@@ -13,7 +14,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "green" | "red" | "blue";
 }) {
   const tones = {
@@ -37,7 +38,7 @@ function ActionButton({
   tone = "secondary",
   onClick,
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "primary" | "secondary" | "danger";
   onClick: () => void;
 }) {
@@ -349,3 +350,4 @@ export function CoursesManager() {
     </section>
   );
 }
+

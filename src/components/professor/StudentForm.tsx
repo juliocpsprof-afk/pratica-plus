@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { StudentLearningSettings } from "@/components/professor/StudentLearningSettings";
 import { generateStudentAccess } from "@/services/auth.service";
@@ -25,7 +26,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green" | "red" | "amber";
 }) {
   const tones = {
@@ -50,7 +51,7 @@ function ActionButton({
   tone = "secondary",
   onClick,
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "primary" | "secondary" | "warning" | "danger";
   onClick: () => void;
 }) {
@@ -724,3 +725,4 @@ export function StudentForm() {
     </section>
   );
 }
+

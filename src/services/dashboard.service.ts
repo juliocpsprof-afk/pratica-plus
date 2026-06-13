@@ -96,5 +96,54 @@ export async function getRecentSimulations(): Promise<RecentSimulationRow[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as RecentSimulationRow[];
+  return ((data ?? []) as any[]).map(
+    (row): RecentSimulationRow => {
+      const scenario = Array.isArray(row.scenarios)
+        ? row.scenarios[0] ?? null
+        : row.scenarios ?? null;
+
+      const moduleData = Array.isArray(scenario?.modules)
+        ? scenario.modules[0] ?? null
+        : scenario?.modules ?? null;
+
+      const student = Array.isArray(row.students)
+        ? row.students[0] ?? null
+        : row.students ?? null;
+
+      const profile = Array.isArray(student?.profiles)
+        ? student.profiles[0] ?? null
+        : student?.profiles ?? null;
+
+      return {
+        id: row.id,
+        total_score: Number(row.total_score ?? 0),
+        started_at: row.started_at ?? null,
+        finished_at: row.finished_at ?? null,
+
+        scenarios: scenario
+          ? {
+              title: scenario.title ?? "Cenário não informado",
+              modules: moduleData
+                ? {
+                    name: moduleData.name ?? "Módulo não informado",
+                  }
+                : null,
+            }
+          : null,
+
+        students: student
+          ? {
+              profiles: profile
+                ? {
+                    full_name:
+                      profile.full_name ?? "Aluno não informado",
+                    username: profile.username ?? "--",
+                  }
+                : null,
+            }
+          : null,
+      } as RecentSimulationRow;
+    }
+  );
 }
+

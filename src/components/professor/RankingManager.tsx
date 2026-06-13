@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { getStudentRanking, RankingRow } from "@/services/ranking.service";
 
@@ -7,7 +8,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green" | "amber";
 }) {
   const tones = {
@@ -44,7 +45,7 @@ function ExportButton({
   onClick,
   disabled = false,
 }: {
-  children: string;
+  children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
 }) {
@@ -343,3 +344,4 @@ export function RankingManager() {
     </section>
   );
 }
+

@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AttendanceStudentRow,
@@ -16,7 +17,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green" | "red" | "amber";
 }) {
   const tones = {
@@ -70,7 +71,7 @@ function ActionButton({
   onClick,
   disabled = false,
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "primary" | "secondary" | "danger" | "success";
   onClick: () => void;
   disabled?: boolean;
@@ -460,3 +461,4 @@ export function AttendanceManager() {
     </section>
   );
 }
+

@@ -35,3 +35,5 @@ export function clearSession(): void {
 
   window.localStorage.removeItem(SESSION_KEY);
 }
+export type { AppSession } from "./session.types";
+

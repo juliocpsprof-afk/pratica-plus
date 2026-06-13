@@ -103,7 +103,57 @@ export async function getStudents(): Promise<StudentRow[]> {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as StudentRow[];
+  const rows = (data ?? []) as any[];
+
+  return rows.map((row): StudentRow => {
+    const profile = Array.isArray(row.profiles)
+      ? row.profiles[0] ?? null
+      : row.profiles ?? null;
+
+    const course = Array.isArray(row.courses)
+      ? row.courses[0] ?? null
+      : row.courses ?? null;
+
+    const classData = Array.isArray(row.classes)
+      ? row.classes[0] ?? null
+      : row.classes ?? null;
+
+    return {
+      ...row,
+
+      profiles: profile
+        ? {
+            id: profile.id,
+            full_name: profile.full_name ?? "Aluno sem nome",
+            username: profile.username ?? "--",
+            role: profile.role ?? "aluno",
+            is_active: Boolean(profile.is_active),
+          }
+        : {
+            id: row.profile_id ?? "",
+            full_name: "Aluno sem nome",
+            username: "--",
+            role: "aluno",
+            is_active: false,
+          },
+
+      courses: course
+        ? {
+            ...course,
+            id: course.id,
+            name: course.name ?? "Curso não informado",
+          }
+        : null,
+
+      classes: classData
+        ? {
+            ...classData,
+            id: classData.id,
+            name: classData.name ?? "Turma não informada",
+          }
+        : null,
+    } as StudentRow;
+  });
 }
 
 export async function createStudent(
@@ -244,3 +294,4 @@ export async function deleteStudent(studentId: string): Promise<void> {
     throw new Error(error.message);
   }
 }
+

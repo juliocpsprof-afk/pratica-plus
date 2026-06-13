@@ -75,6 +75,7 @@ export type SaveSimulationResultInput = {
   teamId?: string | null;
   moduleSlug: string;
   mode: "individual" | "equipe";
+  assignmentId?: string | null;
   totalScore: number;
   answers: SimulationAnswerInput[];
 };
@@ -315,6 +316,7 @@ export async function saveSimulationResult(
       team_id: input.teamId ?? null,
       module_slug: input.moduleSlug,
       mode: input.mode,
+      assignment_id: input.assignmentId ?? null,
       total_score: input.totalScore,
       created_at: new Date().toISOString(),
     })
@@ -499,3 +501,4 @@ export async function getStudentSimulationHistory(
     };
   });
 }
+

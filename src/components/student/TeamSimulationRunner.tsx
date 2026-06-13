@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSession } from "@/lib/session/session.client";
 import { getTechnicalFeedback } from "@/lib/feedback/technicalFeedback";
@@ -40,7 +41,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green";
 }) {
   const tones = {
@@ -634,3 +635,4 @@ export function TeamSimulationRunner() {
     </section>
   );
 }
+

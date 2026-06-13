@@ -238,3 +238,44 @@ a {
     letter-spacing: -0.025em;
   }
 }
+
+/* PRATICA PLUS - DARK BUTTON FIX START */
+
+/*
+  Garante contraste correto nos botões principais.
+  Algumas regras globais estavam sobrescrevendo o text-white.
+*/
+
+button.bg-\[\#08213f\],
+a.bg-\[\#08213f\],
+[role="button"].bg-\[\#08213f\],
+button.bg-blue-800,
+a.bg-blue-800,
+button.bg-blue-900,
+a.bg-blue-900 {
+  color: #ffffff !important;
+}
+
+button.bg-\[\#08213f\] *,
+a.bg-\[\#08213f\] *,
+[role="button"].bg-\[\#08213f\] *,
+button.bg-blue-800 *,
+a.bg-blue-800 *,
+button.bg-blue-900 *,
+a.bg-blue-900 * {
+  color: inherit !important;
+}
+
+/* Mantém o texto branco durante hover, foco e clique */
+
+button.bg-\[\#08213f\]:hover,
+button.bg-\[\#08213f\]:focus,
+button.bg-\[\#08213f\]:active,
+a.bg-\[\#08213f\]:hover,
+a.bg-\[\#08213f\]:focus,
+a.bg-\[\#08213f\]:active {
+  color: #ffffff !important;
+}
+
+/* PRATICA PLUS - DARK BUTTON FIX END */
+

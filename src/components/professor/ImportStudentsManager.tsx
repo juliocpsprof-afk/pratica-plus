@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { generateStudentAccess } from "@/services/auth.service";
@@ -23,7 +24,7 @@ function Badge({
   children,
   tone = "slate",
 }: {
-  children: string;
+  children: ReactNode;
   tone?: "slate" | "blue" | "green" | "red";
 }) {
   const tones = {
@@ -342,3 +343,4 @@ export function ImportStudentsManager() {
     </section>
   );
 }
+
